@@ -1,6 +1,6 @@
 # Maintainer: Jules Pauly <paulyjules@gmail.com>
 pkgname=drossh
-pkgver=0.1.1
+pkgver=0.1.3
 pkgrel=1
 pkgdesc="Client SSH léger avec terminal, gestionnaire de connexions et explorateur SFTP"
 arch=('x86_64')
@@ -9,7 +9,7 @@ license=('MIT')
 depends=('webkit2gtk-4.1' 'gtk3')
 makedepends=('go' 'npm')
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('78f7b30ef727e7c71581c881a06a85c2176d40d407bf9c15e86cc6e17332952b')
+sha256sums=('4eeb550ddbcef4df0a706830b3abcb5fda1d94fcc88d37f004704307c2809bd3')
 
 build() {
   cd "$pkgname-$pkgver"

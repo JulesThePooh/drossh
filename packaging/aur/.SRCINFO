@@ -1,6 +1,6 @@
 pkgbase = drossh
 	pkgdesc = Client SSH léger avec terminal, gestionnaire de connexions et explorateur SFTP
-	pkgver = 0.1.1
+	pkgver = 0.1.3
 	pkgrel = 1
 	url = https://github.com/JulesThePooh/drossh
 	arch = x86_64
@@ -9,7 +9,7 @@ pkgbase = drossh
 	makedepends = npm
 	depends = webkit2gtk-4.1
 	depends = gtk3
-	source = drossh-0.1.1.tar.gz::https://github.com/JulesThePooh/drossh/archive/refs/tags/v0.1.1.tar.gz
-	sha256sums = 78f7b30ef727e7c71581c881a06a85c2176d40d407bf9c15e86cc6e17332952b
+	source = drossh-0.1.3.tar.gz::https://github.com/JulesThePooh/drossh/archive/refs/tags/v0.1.3.tar.gz
+	sha256sums = 4eeb550ddbcef4df0a706830b3abcb5fda1d94fcc88d37f004704307c2809bd3
 
 pkgname = drossh

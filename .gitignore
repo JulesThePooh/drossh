@@ -14,3 +14,7 @@ packaging/aur/src/
 packaging/aur/pkg/
 packaging/aur/*.tar.gz
 packaging/aur/*.pkg.tar.*
+packaging/aur-bin/src/
+packaging/aur-bin/pkg/
+packaging/aur-bin/*.tar.gz
+packaging/aur-bin/*.pkg.tar.*

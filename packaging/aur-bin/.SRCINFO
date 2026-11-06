@@ -1,0 +1,15 @@
+pkgbase = drossh-bin
+	pkgdesc = Client SSH léger avec terminal, gestionnaire de connexions et explorateur SFTP (binaire précompilé)
+	pkgver = 0.1.3
+	pkgrel = 1
+	url = https://github.com/JulesThePooh/drossh
+	arch = x86_64
+	license = MIT
+	depends = webkit2gtk-4.1
+	depends = gtk3
+	provides = drossh
+	conflicts = drossh
+	source = drossh-0.1.3-archlinux-x86_64.tar.gz::https://github.com/JulesThePooh/drossh/releases/download/v0.1.3/drossh-0.1.3-archlinux-x86_64.tar.gz
+	sha256sums = 28135a6adf0d48a1cfa0e7a250ed2e2b05a3f20bfbcca56df3d524e80c0b46b8
+
+pkgname = drossh-bin

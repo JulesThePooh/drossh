@@ -1,0 +1,21 @@
+# Maintainer: Jules Pauly <paulyjules@gmail.com>
+pkgname=drossh-bin
+pkgver=0.1.3
+pkgrel=1
+pkgdesc="Client SSH léger avec terminal, gestionnaire de connexions et explorateur SFTP (binaire précompilé)"
+arch=('x86_64')
+url="https://github.com/JulesThePooh/drossh"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3')
+provides=('drossh')
+conflicts=('drossh')
+source=("drossh-$pkgver-archlinux-x86_64.tar.gz::$url/releases/download/v$pkgver/drossh-$pkgver-archlinux-x86_64.tar.gz")
+sha256sums=('28135a6adf0d48a1cfa0e7a250ed2e2b05a3f20bfbcca56df3d524e80c0b46b8')
+
+package() {
+  install -Dm755 drossh "$pkgdir/usr/bin/drossh"
+  install -Dm644 drossh.desktop "$pkgdir/usr/share/applications/drossh.desktop"
+  install -Dm644 drossh.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/drossh.png"
+  install -Dm644 drossh.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/drossh.svg"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
