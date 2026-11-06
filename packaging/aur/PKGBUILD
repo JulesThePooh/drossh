@@ -1,0 +1,31 @@
+# Maintainer: Jules Pauly <paulyjules@gmail.com>
+pkgname=drossh
+pkgver=0.1.1
+pkgrel=1
+pkgdesc="Client SSH léger avec terminal, gestionnaire de connexions et explorateur SFTP"
+arch=('x86_64')
+url="https://github.com/JulesThePooh/drossh"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3')
+makedepends=('go' 'npm')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('78f7b30ef727e7c71581c881a06a85c2176d40d407bf9c15e86cc6e17332952b')
+
+build() {
+  cd "$pkgname-$pkgver"
+  export GOPATH="$srcdir/gopath"
+  export PATH="$GOPATH/bin:$PATH"
+  export GOFLAGS="-buildvcs=false"
+  export CGO_ENABLED=1
+  go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+  wails build -tags webkit2_41 -clean
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 build/bin/drossh "$pkgdir/usr/bin/drossh"
+  install -Dm644 packaging/drossh.desktop "$pkgdir/usr/share/applications/drossh.desktop"
+  install -Dm644 build/appicon.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/drossh.png"
+  install -Dm644 build/appicon.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/drossh.svg"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
