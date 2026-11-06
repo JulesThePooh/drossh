@@ -1,0 +1,7 @@
+build/bin
+node_modules
+frontend/dist
+
+# binaires compilés à la racine
+/drossh
+/brise
