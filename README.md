@@ -24,7 +24,10 @@ distant — avec édition des fichiers directement dans ton éditeur habituel.
 
 ## Installation
 
-- **Arch / CachyOS / Manjaro** : depuis l'AUR → `yay -S drossh`
+- **Arch / CachyOS / Manjaro** (AUR, avec `yay` ou `paru`) :
+  - `yay -S drossh-bin` — binaire précompilé, installation instantanée *(recommandé)*
+  - `yay -S drossh` — compilation depuis les sources
+  - *(ou `paru -S drossh-bin` / `paru -S drossh`)*
 - **Ubuntu / Debian** : télécharger le `.deb` depuis les
   [Releases](../../releases)
 - **AppImage** (toute distro Linux) : télécharger le `.AppImage`, le rendre
