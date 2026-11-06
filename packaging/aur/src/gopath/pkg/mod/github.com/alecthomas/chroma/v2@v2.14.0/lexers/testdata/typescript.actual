@@ -1,5 +1,0 @@
-const moduleName = modules.map();
-
-declare module "fs" {}
-declare module "@custom/plugin" {}
-declare module "../../compiler/types" {}

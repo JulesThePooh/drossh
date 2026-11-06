@@ -8,3 +8,9 @@ frontend/dist
 
 # artefacts d empaquetage
 /dist/
+
+# artefacts générés par makepkg (ne jamais committer)
+packaging/aur/src/
+packaging/aur/pkg/
+packaging/aur/*.tar.gz
+packaging/aur/*.pkg.tar.*
