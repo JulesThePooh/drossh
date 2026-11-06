@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Drossh
+GenericName=Client SSH
+Comment=Client SSH léger avec explorateur de fichiers SFTP
+Exec=drossh
+Icon=drossh
+Terminal=false
+Categories=Network;RemoteAccess;System;Utility;
+Keywords=ssh;sftp;terminal;console;remote;
+StartupWMClass=drossh

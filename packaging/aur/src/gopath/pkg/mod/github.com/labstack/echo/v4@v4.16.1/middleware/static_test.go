@@ -1,0 +1,750 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: © 2015 LabStack LLC and Echo contributors
+
+package middleware
+
+import (
+	"io/fs"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"testing/fstest"
+
+	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestStatic(t *testing.T) {
+	var testCases = []struct {
+		name                 string
+		givenConfig          *StaticConfig
+		givenAttachedToGroup string
+		whenURL              string
+		expectContains       string
+		expectLength         string
+		expectCode           int
+	}{
+		{
+			name:           "ok, serve index with Echo message",
+			whenURL:        "/",
+			expectCode:     http.StatusOK,
+			expectContains: "<title>Echo</title>",
+		},
+		{
+			name:         "ok, serve file from subdirectory",
+			whenURL:      "/images/walle.png",
+			expectCode:   http.StatusOK,
+			expectLength: "219885",
+		},
+		{
+			name: "ok, when html5 mode serve index for any static file that does not exist",
+			givenConfig: &StaticConfig{
+				Root:  "../_fixture",
+				HTML5: true,
+			},
+			whenURL:        "/random",
+			expectCode:     http.StatusOK,
+			expectContains: "<title>Echo</title>",
+		},
+		{
+			name: "ok, serve index as directory index listing files directory",
+			givenConfig: &StaticConfig{
+				Root:   "../_fixture/certs",
+				Browse: true,
+			},
+			whenURL:        "/",
+			expectCode:     http.StatusOK,
+			expectContains: "cert.pem",
+		},
+		{
+			name: "ok, serve directory index with IgnoreBase and browse",
+			givenConfig: &StaticConfig{
+				Root:       "../_fixture/_fixture/", // <-- last `_fixture/` is overlapping with group path and needs to be ignored
+				IgnoreBase: true,
+				Browse:     true,
+			},
+			givenAttachedToGroup: "/_fixture",
+			whenURL:              "/_fixture/",
+			expectCode:           http.StatusOK,
+			expectContains:       `<a class="file" href="README.md">README.md</a>`,
+		},
+		{
+			name: "ok, serve file with IgnoreBase",
+			givenConfig: &StaticConfig{
+				Root:       "../_fixture/_fixture/", // <-- last `_fixture/` is overlapping with group path and needs to be ignored
+				IgnoreBase: true,
+				Browse:     true,
+			},
+			givenAttachedToGroup: "/_fixture",
+			whenURL:              "/_fixture/README.md",
+			expectCode:           http.StatusOK,
+			expectContains:       "This directory is used for the static middleware test",
+		},
+		{
+			name:           "nok, file not found",
+			whenURL:        "/none",
+			expectCode:     http.StatusNotFound,
+			expectContains: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:           "nok, do not allow directory traversal (backslash - windows separator)",
+			whenURL:        `/..\\middleware/basic_auth.go`,
+			expectCode:     http.StatusNotFound,
+			expectContains: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:           "nok,do not allow directory traversal (slash - unix separator)",
+			whenURL:        `/../middleware/basic_auth.go`,
+			expectCode:     http.StatusNotFound,
+			expectContains: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:           "nok, URL encoded path traversal (single encoding)",
+			whenURL:        "/%2e%2e%2fmiddleware/basic_auth.go",
+			expectCode:     http.StatusNotFound,
+			expectContains: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:           "nok, URL encoded path traversal (double encoding)",
+			whenURL:        "/%252e%252e%252fmiddleware/basic_auth.go",
+			expectCode:     http.StatusNotFound,
+			expectContains: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:           "nok, URL encoded path traversal (mixed encoding)",
+			whenURL:        "/%2e%2e/middleware/basic_auth.go",
+			expectCode:     http.StatusNotFound,
+			expectContains: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:           "nok, backslash URL encoded",
+			whenURL:        "/..%5c..%5cmiddleware/basic_auth.go",
+			expectCode:     http.StatusNotFound,
+			expectContains: "{\"message\":\"Not Found\"}\n",
+		},
+		//{ // Disabled: returns 404 under Windows
+		//	name:           "nok, null byte injection",
+		//	whenURL:        "/index.html%00.jpg",
+		//	expectCode:     http.StatusInternalServerError,
+		//	expectContains: "{\"message\":\"Internal Server Error\"}\n",
+		//},
+		{
+			name:           "nok, mixed backslash and forward slash traversal",
+			whenURL:        "/..\\../middleware/basic_auth.go",
+			expectCode:     http.StatusNotFound,
+			expectContains: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:           "nok, trailing dots (Windows edge case)",
+			whenURL:        "/../middleware/basic_auth.go...",
+			expectCode:     http.StatusNotFound,
+			expectContains: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:           "ok, do not serve file, when a handler took care of the request",
+			whenURL:        "/regular-handler",
+			expectCode:     http.StatusOK,
+			expectContains: "ok",
+		},
+		{
+			name: "nok, when html5 fail if the index file does not exist",
+			givenConfig: &StaticConfig{
+				Root:  "../_fixture",
+				HTML5: true,
+				Index: "missing.html",
+			},
+			whenURL:    "/random",
+			expectCode: http.StatusInternalServerError,
+		},
+		{
+			name: "ok, serve from http.FileSystem",
+			givenConfig: &StaticConfig{
+				Root:       "_fixture",
+				Filesystem: http.Dir(".."),
+			},
+			whenURL:        "/",
+			expectCode:     http.StatusOK,
+			expectContains: "<title>Echo</title>",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := echo.New()
+
+			config := StaticConfig{Root: "../_fixture"}
+			if tc.givenConfig != nil {
+				config = *tc.givenConfig
+			}
+			middlewareFunc := StaticWithConfig(config)
+			if tc.givenAttachedToGroup != "" {
+				// middleware is attached to group
+				subGroup := e.Group(tc.givenAttachedToGroup, middlewareFunc)
+				// group without http handlers (routes) does not do anything.
+				// Request is matched against http handlers (routes) that have group middleware attached to them
+				subGroup.GET("", echo.NotFoundHandler)
+				subGroup.GET("/*", echo.NotFoundHandler)
+			} else {
+				// middleware is on root level
+				e.Use(middlewareFunc)
+				e.GET("/regular-handler", func(c echo.Context) error {
+					return c.String(http.StatusOK, "ok")
+				})
+			}
+
+			req := httptest.NewRequest(http.MethodGet, tc.whenURL, nil)
+			rec := httptest.NewRecorder()
+
+			e.ServeHTTP(rec, req)
+
+			assert.Equal(t, tc.expectCode, rec.Code)
+			if tc.expectContains != "" {
+				responseBody := rec.Body.String()
+				assert.Contains(t, responseBody, tc.expectContains)
+			}
+			if tc.expectLength != "" {
+				assert.Equal(t, rec.Header().Get(echo.HeaderContentLength), tc.expectLength)
+			}
+		})
+	}
+}
+
+func TestStaticMiddlewareAndRouterInconsistentEscaping(t *testing.T) {
+	var testCases = []struct {
+		name                  string
+		givenConfig           StaticConfig
+		whenURL               string
+		expectCode            int
+		expectBodyContains    string
+		expectBodyNotContains string
+	}{
+		{
+			name:               "ok, normal file is served",
+			givenConfig:        StaticConfig{},
+			whenURL:            "/test.txt",
+			expectCode:         http.StatusOK,
+			expectBodyContains: "test",
+		},
+		{
+			name:        "ok, direct request to restricted path is blocked by ACL route",
+			givenConfig: StaticConfig{},
+			whenURL:     "/admin/secret.txt",
+			expectCode:  http.StatusForbidden,
+		},
+		{
+			// With EnablePathUnescaping=false (default/safe), the wildcard param "admin%2fsecret.txt"
+			// is NOT decoded, so the FS lookup is for literal "admin%2fsecret.txt" which does
+			// not exist → falls through to the /* handler → 404. ACL is not bypassed.
+			name:                  "ok, encoded slash returns 404 with default safe config (EnablePathUnescaping=false)",
+			givenConfig:           StaticConfig{},
+			whenURL:               "/admin%2fsecret.txt",
+			expectCode:            http.StatusNotFound,
+			expectBodyNotContains: "TOP-SECRET",
+		},
+		{
+			// With EnablePathUnescaping=true, the wildcard param "admin%2fsecret.txt" IS decoded
+			// to "admin/secret.txt". The router already routed to /* (encoded %2f prevented matching
+			// /admin/*), so the ACL guard never ran. The file is served — ACL bypass.
+			// Only use EnablePathUnescaping: true when not relying on route-based ACL guards.
+			name:               "nok, encoded slash bypasses ACL when EnablePathUnescaping=true",
+			givenConfig:        StaticConfig{EnablePathUnescaping: true},
+			whenURL:            "/admin%2fsecret.txt",
+			expectCode:         http.StatusOK,
+			expectBodyContains: "TOP-SECRET",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			assert.NoError(t, os.MkdirAll(filepath.Join(root, "admin"), 0o755))
+			assert.NoError(t, os.WriteFile(filepath.Join(root, "admin", "secret.txt"), []byte("TOP-SECRET"), 0o644))
+			assert.NoError(t, os.WriteFile(filepath.Join(root, "test.txt"), []byte("test content"), 0o644))
+
+			cfg := tc.givenConfig
+			cfg.Root = root
+
+			e := echo.New()
+			e.Use(StaticWithConfig(cfg))
+			e.GET("/*", func(c echo.Context) error { return echo.ErrNotFound })
+			e.GET("/admin/*", func(c echo.Context) error { return echo.ErrForbidden })
+
+			req := httptest.NewRequest(http.MethodGet, tc.whenURL, nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
+			assert.Equal(t, tc.expectCode, rec.Code)
+			body := rec.Body.String()
+			if tc.expectBodyContains != "" {
+				assert.Contains(t, body, tc.expectBodyContains)
+			}
+			if tc.expectBodyNotContains != "" {
+				assert.NotContains(t, body, tc.expectBodyNotContains)
+			}
+		})
+	}
+}
+
+func TestStatic_GroupWithStatic(t *testing.T) {
+	var testCases = []struct {
+		name                 string
+		givenGroup           string
+		givenPrefix          string
+		givenRoot            string
+		whenURL              string
+		expectStatus         int
+		expectHeaderLocation string
+		expectBodyStartsWith string
+	}{
+		{
+			name:                 "ok",
+			givenPrefix:          "/images",
+			givenRoot:            "../_fixture/images",
+			whenURL:              "/group/images/walle.png",
+			expectStatus:         http.StatusOK,
+			expectBodyStartsWith: string([]byte{0x89, 0x50, 0x4e, 0x47}),
+		},
+		{
+			name:                 "No file",
+			givenPrefix:          "/images",
+			givenRoot:            "../_fixture/scripts",
+			whenURL:              "/group/images/bolt.png",
+			expectStatus:         http.StatusNotFound,
+			expectBodyStartsWith: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:                 "Directory not found (no trailing slash)",
+			givenPrefix:          "/images",
+			givenRoot:            "../_fixture/images",
+			whenURL:              "/group/images/",
+			expectStatus:         http.StatusNotFound,
+			expectBodyStartsWith: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:                 "Directory redirect",
+			givenPrefix:          "/",
+			givenRoot:            "../_fixture",
+			whenURL:              "/group/folder",
+			expectStatus:         http.StatusMovedPermanently,
+			expectHeaderLocation: "/group/folder/",
+			expectBodyStartsWith: "",
+		},
+		{
+			// %2f (encoded slash) is now rejected before unescaping (GHSA-vfp3-v2gw-7wfq), so it no
+			// longer resolves a directory and emits a redirect — it is a 404 with no Location header.
+			name:                 "Encoded slash is rejected, not redirected",
+			givenPrefix:          "/",
+			givenRoot:            "../_fixture",
+			whenURL:              "/group/folder%2f..",
+			expectStatus:         http.StatusNotFound,
+			expectHeaderLocation: "",
+			expectBodyStartsWith: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:                 "Prefixed directory 404 (request URL without slash)",
+			givenGroup:           "_fixture",
+			givenPrefix:          "/folder/", // trailing slash will intentionally not match "/folder"
+			givenRoot:            "../_fixture",
+			whenURL:              "/_fixture/folder", // no trailing slash
+			expectStatus:         http.StatusNotFound,
+			expectBodyStartsWith: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:                 "Prefixed directory redirect (without slash redirect to slash)",
+			givenGroup:           "_fixture",
+			givenPrefix:          "/folder", // no trailing slash shall match /folder and /folder/*
+			givenRoot:            "../_fixture",
+			whenURL:              "/_fixture/folder", // no trailing slash
+			expectStatus:         http.StatusMovedPermanently,
+			expectHeaderLocation: "/_fixture/folder/",
+			expectBodyStartsWith: "",
+		},
+		{
+			name:                 "Directory with index.html",
+			givenPrefix:          "/",
+			givenRoot:            "../_fixture",
+			whenURL:              "/group/",
+			expectStatus:         http.StatusOK,
+			expectBodyStartsWith: "<!doctype html>",
+		},
+		{
+			name:                 "Prefixed directory with index.html (prefix ending with slash)",
+			givenPrefix:          "/assets/",
+			givenRoot:            "../_fixture",
+			whenURL:              "/group/assets/",
+			expectStatus:         http.StatusOK,
+			expectBodyStartsWith: "<!doctype html>",
+		},
+		{
+			name:                 "Prefixed directory with index.html (prefix ending without slash)",
+			givenPrefix:          "/assets",
+			givenRoot:            "../_fixture",
+			whenURL:              "/group/assets/",
+			expectStatus:         http.StatusOK,
+			expectBodyStartsWith: "<!doctype html>",
+		},
+		{
+			name:                 "Sub-directory with index.html",
+			givenPrefix:          "/",
+			givenRoot:            "../_fixture",
+			whenURL:              "/group/folder/",
+			expectStatus:         http.StatusOK,
+			expectBodyStartsWith: "<!doctype html>",
+		},
+		{
+			name:                 "do not allow directory traversal (backslash - windows separator)",
+			givenPrefix:          "/",
+			givenRoot:            "../_fixture/",
+			whenURL:              `/group/..\\middleware/basic_auth.go`,
+			expectStatus:         http.StatusNotFound,
+			expectBodyStartsWith: "{\"message\":\"Not Found\"}\n",
+		},
+		{
+			name:                 "do not allow directory traversal (slash - unix separator)",
+			givenPrefix:          "/",
+			givenRoot:            "../_fixture/",
+			whenURL:              `/group/../middleware/basic_auth.go`,
+			expectStatus:         http.StatusNotFound,
+			expectBodyStartsWith: "{\"message\":\"Not Found\"}\n",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := echo.New()
+			group := "/group"
+			if tc.givenGroup != "" {
+				group = tc.givenGroup
+			}
+			g := e.Group(group)
+			g.Static(tc.givenPrefix, tc.givenRoot)
+
+			req := httptest.NewRequest(http.MethodGet, tc.whenURL, nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			assert.Equal(t, tc.expectStatus, rec.Code)
+			body := rec.Body.String()
+			if tc.expectBodyStartsWith != "" {
+				assert.True(t, strings.HasPrefix(body, tc.expectBodyStartsWith))
+			} else {
+				assert.Equal(t, "", body)
+			}
+
+			if tc.expectHeaderLocation != "" {
+				assert.Equal(t, tc.expectHeaderLocation, rec.Header().Get(echo.HeaderLocation))
+			} else {
+				_, ok := rec.Result().Header[echo.HeaderLocation]
+				assert.False(t, ok)
+			}
+		})
+	}
+}
+
+func TestStatic_CustomFS(t *testing.T) {
+	var testCases = []struct {
+		name           string
+		filesystem     fs.FS
+		root           string
+		whenURL        string
+		expectContains string
+		expectCode     int
+	}{
+		{
+			name:           "ok, serve index with Echo message",
+			whenURL:        "/",
+			filesystem:     os.DirFS("../_fixture"),
+			expectCode:     http.StatusOK,
+			expectContains: "<title>Echo</title>",
+		},
+
+		{
+			name:           "ok, serve index with Echo message",
+			whenURL:        "/_fixture/",
+			filesystem:     os.DirFS(".."),
+			expectCode:     http.StatusOK,
+			expectContains: "<title>Echo</title>",
+		},
+		{
+			name:    "ok, serve file from map fs",
+			whenURL: "/file.txt",
+			filesystem: fstest.MapFS{
+				"file.txt": &fstest.MapFile{Data: []byte("file.txt is ok")},
+			},
+			expectCode:     http.StatusOK,
+			expectContains: "file.txt is ok",
+		},
+		{
+			name:       "nok, missing file in map fs",
+			whenURL:    "/file.txt",
+			expectCode: http.StatusNotFound,
+			filesystem: fstest.MapFS{
+				"file2.txt": &fstest.MapFile{Data: []byte("file2.txt is ok")},
+			},
+		},
+		{
+			name:    "nok, file is not a subpath of root",
+			whenURL: `/../../secret.txt`,
+			root:    "/nested/folder",
+			filesystem: fstest.MapFS{
+				"secret.txt": &fstest.MapFile{Data: []byte("this is a secret")},
+			},
+			expectCode: http.StatusNotFound,
+		},
+		{
+			name:       "nok, backslash is forbidden",
+			whenURL:    `/..\..\secret.txt`,
+			expectCode: http.StatusNotFound,
+			root:       "/nested/folder",
+			filesystem: fstest.MapFS{
+				"secret.txt": &fstest.MapFile{Data: []byte("this is a secret")},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := echo.New()
+
+			config := StaticConfig{
+				Root:       ".",
+				Filesystem: http.FS(tc.filesystem),
+			}
+
+			if tc.root != "" {
+				config.Root = tc.root
+			}
+
+			middlewareFunc := StaticWithConfig(config)
+			e.Use(middlewareFunc)
+
+			req := httptest.NewRequest(http.MethodGet, tc.whenURL, nil)
+			rec := httptest.NewRecorder()
+
+			e.ServeHTTP(rec, req)
+
+			assert.Equal(t, tc.expectCode, rec.Code)
+			if tc.expectContains != "" {
+				responseBody := rec.Body.String()
+				assert.Contains(t, responseBody, tc.expectContains)
+			}
+		})
+	}
+}
+
+func TestStatic_resolvesRoutedPath(t *testing.T) {
+	// GHSA-375p-5qhx-8wq4 (encoded paths) and GHSA-3pmx-cf9f-34xr (dot segments): the static middleware must resolve
+	// files from the same path that the router matched, so encoding or dot segments do not reach a different file.
+	// Note: middleware registered with e.Use runs before group middleware, so the `/admin` group guard below does not
+	// protect files served by it (see Static docs); TestStatic_routeLevelGuard covers a guardable setup.
+	fsys := fstest.MapFS{
+		"admin/secret.txt":       {Data: []byte("SECRET")},
+		"public/index.html":      {Data: []byte("public")},
+		"hello world.txt":        {Data: []byte("hello")},
+		"public/admin/other.txt": {Data: []byte("other")},
+	}
+	var testCases = []struct {
+		name         string
+		whenPath     string // set as req.URL.Path
+		whenRawPath  string // set as req.URL.RawPath
+		expectStatus int
+		expectBody   string
+	}{
+		{name: "encoded slash", whenPath: "/admin/secret.txt", whenRawPath: "/admin%2Fsecret.txt", expectStatus: http.StatusNotFound},
+		{name: "encoded slash lowercase", whenPath: "/admin/secret.txt", whenRawPath: "/admin%2fsecret.txt", expectStatus: http.StatusNotFound},
+		{name: "encoded letter", whenPath: "/admin/secret.txt", whenRawPath: "/%61dmin/secret.txt", expectStatus: http.StatusNotFound},
+		{name: "encoded dot segment", whenPath: "/public/../admin/secret.txt", whenRawPath: "/public/%2E%2E/admin/secret.txt", expectStatus: http.StatusNotFound},
+		{name: "encoded slashes and dots", whenPath: "/public/../admin/secret.txt", whenRawPath: "/public%2F..%2Fadmin%2Fsecret.txt", expectStatus: http.StatusNotFound},
+		{name: "parent dot segment", whenPath: "/public/../admin/secret.txt", expectStatus: http.StatusNotFound},
+		{name: "current dot segment", whenPath: "/./admin/secret.txt", expectStatus: http.StatusNotFound},
+		{name: "empty segment", whenPath: "//admin/secret.txt", expectStatus: http.StatusNotFound},
+		{name: "canonical escape is still served", whenPath: "/hello world.txt", expectStatus: http.StatusOK, expectBody: "hello"},
+		{name: "plain public file is still served", whenPath: "/public/index.html", expectStatus: http.StatusOK, expectBody: "public"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := echo.New()
+			e.Use(StaticWithConfig(StaticConfig{Filesystem: http.FS(fsys)}))
+			admin := e.Group("/admin", func(next echo.HandlerFunc) echo.HandlerFunc {
+				return func(c echo.Context) error {
+					return echo.ErrForbidden
+				}
+			})
+			admin.GET("/*", func(c echo.Context) error {
+				return c.String(http.StatusOK, "admin")
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.URL.Path = tc.whenPath
+			req.URL.RawPath = tc.whenRawPath
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
+			assert.Equal(t, tc.expectStatus, rec.Code)
+			assert.NotContains(t, rec.Body.String(), "SECRET")
+			if tc.expectBody != "" {
+				assert.Equal(t, tc.expectBody, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestStatic_routeLevelGuard(t *testing.T) {
+	fsys := fstest.MapFS{
+		"admin/secret.txt": {Data: []byte("SECRET")},
+		"hello world.txt":  {Data: []byte("hello")},
+		"x/file.txt":       {Data: []byte("x")},
+	}
+	var testCases = []struct {
+		name                      string
+		givenEnablePathUnescaping bool
+		whenPath                  string // set as req.URL.Path
+		whenRawPath               string // set as req.URL.RawPath
+		expectStatus              int
+	}{
+		{name: "guarded path", whenPath: "/admin/secret.txt", expectStatus: http.StatusForbidden},
+		{name: "guarded path repeated prefix", whenPath: "/admin/admin/secret.txt", expectStatus: http.StatusForbidden},
+		{name: "encoded slash", whenPath: "/admin/secret.txt", whenRawPath: "/admin%2Fsecret.txt", expectStatus: http.StatusNotFound},
+		{name: "encoded letter", whenPath: "/admin/secret.txt", whenRawPath: "/%61dmin/secret.txt", expectStatus: http.StatusNotFound},
+		{name: "parent dot segment", whenPath: "/x/../admin/secret.txt", expectStatus: http.StatusNotFound},
+		{name: "empty segment", whenPath: "//admin/secret.txt", expectStatus: http.StatusNotFound},
+		{name: "encoded dots with unescaping", givenEnablePathUnescaping: true, whenPath: "/x/../admin/secret.txt", whenRawPath: "/x/%2e%2e/admin/secret.txt", expectStatus: http.StatusNotFound},
+		{name: "encoded dot slash with unescaping", givenEnablePathUnescaping: true, whenPath: "/./admin/secret.txt", whenRawPath: "/.%2Fadmin/secret.txt", expectStatus: http.StatusNotFound},
+		{name: "public file", whenPath: "/hello world.txt", expectStatus: http.StatusOK},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := echo.New()
+			static := StaticWithConfig(StaticConfig{Filesystem: http.FS(fsys), EnablePathUnescaping: tc.givenEnablePathUnescaping})
+			e.GET("/*", func(c echo.Context) error {
+				return echo.ErrNotFound
+			}, static)
+			admin := e.Group("/admin", func(next echo.HandlerFunc) echo.HandlerFunc {
+				return func(c echo.Context) error {
+					return echo.ErrForbidden
+				}
+			})
+			admin.GET("/*", func(c echo.Context) error {
+				return c.String(http.StatusOK, "admin")
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.URL.Path = tc.whenPath
+			req.URL.RawPath = tc.whenRawPath
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
+			assert.Equal(t, tc.expectStatus, rec.Code)
+			assert.NotContains(t, rec.Body.String(), "SECRET")
+		})
+	}
+}
+
+func TestStatic_HTML5WithUncleanPath(t *testing.T) {
+	// A path with an empty or dot segment is not served as a file, but HTML5 mode still serves the index for it.
+	e := echo.New()
+	e.Use(StaticWithConfig(StaticConfig{
+		Filesystem: http.FS(fstest.MapFS{"index.html": {Data: []byte("spa")}}),
+		HTML5:      true,
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.URL.Path = "/app//route"
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "spa", rec.Body.String())
+}
+
+// nonValidatingFS is a custom fs.FS that does not enforce fs.ValidPath, so a name with ".." escapes its root. Echo must
+// never pass such a name to a user supplied filesystem.
+type nonValidatingFS struct{ root string }
+
+func (f nonValidatingFS) Open(name string) (fs.File, error) {
+	// treat a backslash as a separator on every OS, like filepath.Join does on Windows
+	return os.Open(filepath.Join(f.root, filepath.FromSlash(strings.ReplaceAll(name, `\`, "/"))))
+}
+
+func TestStatic_nonValidatingCustomFSCannotEscapeRoot(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "public"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "public", "index.txt"), []byte("public"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "secret.txt"), []byte("secret"), 0o644))
+
+	targets := []string{
+		"/../secret.txt",
+		"/%2e%2e/secret.txt",
+		"/..%2fsecret.txt",
+		"/sub/../../secret.txt",
+		"/..%5csecret.txt",
+		"/..%5Csecret.txt",
+		"/a%5C..%5C..%5Csecret.txt",
+		`/..\secret.txt`,
+	}
+	for _, group := range []string{"", "/static"} {
+		for _, unescape := range []bool{false, true} {
+			e := echo.New()
+			mw := StaticWithConfig(StaticConfig{
+				Filesystem:           http.FS(nonValidatingFS{root: filepath.Join(dir, "public")}),
+				EnablePathUnescaping: unescape,
+			})
+			if group == "" {
+				e.Use(mw)
+			} else {
+				e.Group(group, mw)
+			}
+
+			for _, target := range targets {
+				req := httptest.NewRequest(http.MethodGet, group+target, nil)
+				rec := httptest.NewRecorder()
+				e.ServeHTTP(rec, req)
+
+				assert.Equal(t, http.StatusNotFound, rec.Code, "%s unescape=%v", group+target, unescape)
+				assert.NotContains(t, rec.Body.String(), "secret", "%s unescape=%v", group+target, unescape)
+			}
+
+			req := httptest.NewRequest(http.MethodGet, group+"/index.txt", nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			assert.Equal(t, http.StatusOK, rec.Code, "group=%q unescape=%v", group, unescape)
+			assert.Equal(t, "public", rec.Body.String())
+		}
+	}
+}
+
+func TestHasDotOrEmptySegment(t *testing.T) {
+	var testCases = []struct {
+		path   string
+		expect bool
+	}{
+		{path: "", expect: false},
+		{path: "/", expect: false},
+		{path: "/index.html", expect: false},
+		{path: "/css/app.css", expect: false},
+		{path: "/..", expect: true},
+		{path: "/a/../b", expect: true},
+		{path: "/a/./b", expect: true},
+		{path: "/a//b", expect: true},
+		{path: `/..\secret.txt`, expect: true},
+		{path: `/a\..\b`, expect: true},
+		{path: `/.\secret.txt`, expect: true},
+		{path: `/\..`, expect: true},
+		{path: `/..\`, expect: true},
+		{path: `/dir\file.txt`, expect: false},
+		{path: "/...", expect: false},
+		{path: "/..foo", expect: false},
+		{path: `/a\\b`, expect: false},
+		{path: "/..%2fsecret.txt", expect: false}, // still encoded, only unsafe once unescaped
+	}
+	for _, tc := range testCases {
+		t.Run(tc.path, func(t *testing.T) {
+			assert.Equal(t, tc.expect, hasDotOrEmptySegment(tc.path))
+		})
+	}
+}

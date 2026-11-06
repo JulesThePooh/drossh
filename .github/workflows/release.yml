@@ -42,6 +42,39 @@ jobs:
           name: linux
           path: dist/*
 
+  linux-arch:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Dépendances Arch
+        run: pacman -Syu --noconfirm --needed base-devel git go nodejs npm webkit2gtk-4.1 gtk3
+
+      - uses: actions/checkout@v4
+
+      - name: Compiler (Arch, webkit 4.1)
+        run: |
+          export GOPATH=/root/go
+          export PATH="$PATH:/root/go/bin"
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+          wails build -tags webkit2_41 -clean
+
+      - name: Empaqueter le binaire Arch
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          mkdir -p pkg
+          cp build/bin/drossh pkg/drossh
+          cp packaging/drossh.desktop pkg/
+          cp build/appicon.png pkg/drossh.png
+          cp build/appicon.svg pkg/drossh.svg
+          cp LICENSE pkg/
+          mkdir -p dist
+          tar -C pkg -czf "dist/drossh-$VER-archlinux-x86_64.tar.gz" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-arch
+          path: dist/*
+
   windows:
     runs-on: windows-latest
     steps:
@@ -77,7 +110,7 @@ jobs:
           path: dist/*
 
   release:
-    needs: [linux, windows]
+    needs: [linux, linux-arch, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
