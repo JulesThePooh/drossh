@@ -5,3 +5,6 @@ frontend/dist
 # binaires compilés à la racine
 /drossh
 /brise
+
+# artefacts d empaquetage
+/dist/
