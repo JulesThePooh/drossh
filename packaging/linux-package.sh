@@ -12,6 +12,13 @@ VERSION="${1:?usage: linux-package.sh <version>}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Pas de dépendance à FUSE pour faire tourner les outils AppImage, et aucun
+# téléchargement ne doit pouvoir bloquer indéfiniment la CI.
+export APPIMAGE_EXTRACT_AND_RUN=1
+dl() {  # dl <destination> <url> : wget borné (timeout + retries), jamais d'attente infinie
+  wget --tries=3 --timeout=40 --waitretry=5 -qO "$1" "$2"
+}
+
 BIN=build/bin/drossh
 [ -f "$BIN" ] || { echo "Binaire introuvable : $BIN (compile d'abord avec wails build -tags webkit2_41)"; exit 1; }
 mkdir -p dist
@@ -41,7 +48,7 @@ echo "→ dist/$STAGE.tar.gz"
 
 # ------------------------------------------------------------------ .deb (nfpm)
 export VERSION
-go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+timeout 300 go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 "$(go env GOPATH)/bin/nfpm" package -f packaging/nfpm.yaml -p deb -t "dist/drossh_${VERSION}_amd64.deb"
 echo "→ dist/drossh_${VERSION}_amd64.deb"
 
@@ -53,16 +60,17 @@ mkdir -p "$APPDIR"
 convert build/appicon.png -resize 512x512 /tmp/drossh-512.png
 
 # Outils AppImage
+echo ">> téléchargement des outils AppImage"
 TOOLS="$(mktemp -d)"
-wget -qO "$TOOLS/linuxdeploy" https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-wget -qO "$TOOLS/linuxdeploy-plugin-gtk.sh" https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
-wget -qO "$TOOLS/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-wget -qO "$TOOLS/runtime-x86_64" https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
+dl "$TOOLS/linuxdeploy" https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+dl "$TOOLS/linuxdeploy-plugin-gtk.sh" https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+dl "$TOOLS/appimagetool" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+dl "$TOOLS/runtime-x86_64" https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
 chmod +x "$TOOLS/linuxdeploy" "$TOOLS/linuxdeploy-plugin-gtk.sh" "$TOOLS/appimagetool"
 export PATH="$TOOLS:$PATH"
-export APPIMAGE_EXTRACT_AND_RUN=1   # pas de FUSE nécessaire pour faire tourner les outils
 
 # Bundling binaire + gtk/webkit + dépendances
+echo ">> linuxdeploy (bundling gtk/webkit)"
 "$TOOLS/linuxdeploy" \
   --appdir "$APPDIR" \
   -e "$BIN" \
@@ -81,14 +89,15 @@ cp -aL "$ARCHLIB"/libicuuc.so.*   "$APPDIR/usr/lib/" 2>/dev/null || true
 
 # Fermeture des dépendances : embarque toute lib encore manquante
 # (hors glibc / pilotes GL, listés dans l'excludelist officielle)
-wget -qO "$TOOLS/excludelist" https://raw.githubusercontent.com/AppImage/pkg2appimage/master/excludelist || true
+echo ">> fermeture des dépendances"
+dl "$TOOLS/excludelist" https://raw.githubusercontent.com/AppImage/pkg2appimage/master/excludelist || true
 EXCL=$(grep -vE '^\s*#|^\s*$' "$TOOLS/excludelist" 2>/dev/null | awk '{print $1}')
 is_excluded() { echo "$EXCL" | grep -qx "$1"; }
 search_paths() { echo "$APPDIR/usr/lib:$APPDIR/usr/lib/webkit2gtk-4.1:$ARCHLIB:/usr/lib:/lib"; }
 for pass in 1 2 3 4; do
   while IFS= read -r elf; do
-    file "$elf" 2>/dev/null | grep -q ELF || continue
-    LD_LIBRARY_PATH="$(search_paths)" ldd "$elf" 2>/dev/null | awk '/=> \// {print $3}' | while IFS= read -r dep; do
+    timeout 15 file "$elf" 2>/dev/null | grep -q ELF || continue
+    LD_LIBRARY_PATH="$(search_paths)" timeout 15 ldd "$elf" 2>/dev/null | awk '/=> \// {print $3}' | while IFS= read -r dep; do
       base="$(basename "$dep")"
       [ -e "$APPDIR/usr/lib/$base" ] && continue
       is_excluded "$base" && continue
@@ -120,6 +129,7 @@ EOS
 chmod +x "$APPDIR/AppRun"
 
 # Assemble l'AppImage avec le runtime moderne (fuse3, plus de dépendance à libfuse2)
+echo ">> appimagetool (assemblage final)"
 ARCH=x86_64 "$TOOLS/appimagetool" \
   --runtime-file "$TOOLS/runtime-x86_64" \
   "$APPDIR" "dist/Drossh-${VERSION}-x86_64.AppImage"

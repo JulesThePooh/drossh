@@ -10,6 +10,7 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -37,7 +38,7 @@ jobs:
           wails build -tags webkit2_41 -clean
 
       - name: Empaqueter (tarball + .deb + AppImage)
-        run: bash packaging/linux-package.sh "${GITHUB_REF_NAME#v}"
+        run: timeout 1200 bash packaging/linux-package.sh "${GITHUB_REF_NAME#v}"
 
       - uses: actions/upload-artifact@v4
         with:
