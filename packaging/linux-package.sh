@@ -16,18 +16,12 @@ cd "$ROOT"
 # téléchargement ne doit pouvoir bloquer ni être bridé par GitHub.
 export APPIMAGE_EXTRACT_AND_RUN=1
 dl() {  # dl <destination> <url>
-  # curl borné (connexion 30 s, 10 min max, 4 essais) ; authentifié via GH_TOKEN
-  # quand il est fourni -> GitHub ne bride plus les téléchargements anonymes.
-  # -L suit la redirection vers le stockage signé SANS renvoyer l'en-tête Auth
-  # (comportement curl par défaut), ce qui évite les refus côté stockage.
-  if [ -n "${GH_TOKEN:-}" ]; then
-    curl -fsSL --retry 4 --retry-delay 5 --retry-connrefused \
-         --connect-timeout 30 --max-time 600 \
-         -H "Authorization: Bearer $GH_TOKEN" -o "$1" "$2"
-  else
-    curl -fsSL --retry 4 --retry-delay 5 --retry-connrefused \
-         --connect-timeout 30 --max-time 600 -o "$1" "$2"
-  fi
+  # curl anonyme mais borné : 4 essais, connexion 30 s, 10 min max par fichier.
+  # Pas d'en-tête Authorization : les outils viennent d'AUTRES dépôts publics
+  # (linuxdeploy, appimagetool...) et un token y renvoie 404. L'anonyme est
+  # l'approche éprouvée (releases v0.1.5 et v0.1.6 construites ainsi).
+  curl -fsSL --retry 4 --retry-delay 5 --retry-connrefused \
+       --connect-timeout 30 --max-time 600 -o "$1" "$2"
 }
 
 BIN=build/bin/drossh

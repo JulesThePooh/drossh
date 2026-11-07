@@ -38,8 +38,6 @@ jobs:
           wails build -tags webkit2_41 -clean
 
       - name: Empaqueter (tarball + .deb + AppImage)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: timeout 1200 bash packaging/linux-package.sh "${GITHUB_REF_NAME#v}"
 
       - uses: actions/upload-artifact@v4
