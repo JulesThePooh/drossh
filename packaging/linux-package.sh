@@ -114,12 +114,32 @@ done
 # Patch des chemins libexec/injected-bundle codés en dur dans libwebkit
 python3 -I packaging/patch-webkit.py "$APPDIR/usr/lib/libwebkit2gtk-4.1.so.0"
 
+# Shim xdg-open : quand l'appli ouvre un lien (bouton MAJ) ou un fichier dans
+# l'éditeur, le programme externe ne doit PAS hériter des libs/modules de
+# l'AppImage (sinon le navigateur/éditeur ne démarre pas). Ce shim restaure
+# l'environnement système avant de passer la main au vrai xdg-open.
+mkdir -p "$APPDIR/shim"
+cat > "$APPDIR/shim/xdg-open" <<'EOS'
+#!/bin/sh
+export LD_LIBRARY_PATH="${APPIMG_SYS_LD:-}"
+unset GTK_PATH GDK_PIXBUF_MODULE_FILE GDK_PIXBUF_MODULEDIR GIO_MODULE_DIR GSETTINGS_SCHEMA_DIR
+for real in /usr/bin/xdg-open /bin/xdg-open /usr/local/bin/xdg-open; do
+  [ -x "$real" ] && exec "$real" "$@"
+done
+exit 1
+EOS
+chmod +x "$APPDIR/shim/xdg-open"
+
 # AppRun maison : relie le chemin webkit patché à l'AppDir, charge l'env GTK, lance le binaire
 mv "$APPDIR/AppRun" "$APPDIR/AppRun.linuxdeploy" 2>/dev/null || true
 cat > "$APPDIR/AppRun" <<'EOS'
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"
 export APPDIR="$HERE"
+# Sauvegarde l'environnement système AVANT de le modifier, pour que le shim
+# xdg-open puisse le restaurer quand l'appli lance un programme externe.
+export APPIMG_SYS_LD="${LD_LIBRARY_PATH:-}"
+export PATH="$HERE/shim:$PATH"
 # WebKit cherche ses process à /tmp/.drssh-wk/webkit2gtk-4.1 (patché dans la lib) :
 # on relie ce chemin au contenu embarqué.
 mkdir -p /tmp/.drssh-wk 2>/dev/null && ln -sfn "$HERE/usr/lib/webkit2gtk-4.1" /tmp/.drssh-wk/webkit2gtk-4.1 2>/dev/null

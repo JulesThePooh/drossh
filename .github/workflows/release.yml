@@ -35,7 +35,7 @@ jobs:
       - name: Compiler (webkit 4.1)
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
-          wails build -tags webkit2_41 -clean
+          wails build -tags webkit2_41 -ldflags "-X main.AppVersion=${GITHUB_REF_NAME#v}" -clean
 
       - name: Empaqueter (tarball + .deb + AppImage)
         run: timeout 1200 bash packaging/linux-package.sh "${GITHUB_REF_NAME#v}"
@@ -59,7 +59,7 @@ jobs:
           export GOPATH=/root/go
           export PATH="$PATH:/root/go/bin"
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
-          wails build -tags webkit2_41 -clean
+          wails build -tags webkit2_41 -ldflags "-X main.AppVersion=${GITHUB_REF_NAME#v}" -clean
 
       - name: Empaqueter le binaire Arch
         run: |
@@ -99,7 +99,7 @@ jobs:
         shell: bash
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
-          wails build -clean
+          wails build -ldflags "-X main.AppVersion=${GITHUB_REF_NAME#v}" -clean
 
       - name: Renommer l'exécutable
         shell: bash

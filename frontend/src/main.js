@@ -17,7 +17,7 @@ let draggedFolderId = null;
 let draggedSid = null;
 let filterText = '';
 let editingKeyId = null;     // clé SSH en cours de modification (null = ajout)
-let appVersion = '0.1.4';    // remplacé par Version() au démarrage
+let appVersion = 'dev';    // remplacé par Version() au démarrage (injectée au build)
 
 function uid() {
   return (crypto.randomUUID ? crypto.randomUUID() : 's' + Date.now() + Math.random().toString(16).slice(2));
