@@ -13,10 +13,21 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 # Pas de dépendance à FUSE pour faire tourner les outils AppImage, et aucun
-# téléchargement ne doit pouvoir bloquer indéfiniment la CI.
+# téléchargement ne doit pouvoir bloquer ni être bridé par GitHub.
 export APPIMAGE_EXTRACT_AND_RUN=1
-dl() {  # dl <destination> <url> : wget borné (timeout + retries), jamais d'attente infinie
-  wget --tries=3 --timeout=40 --waitretry=5 -qO "$1" "$2"
+dl() {  # dl <destination> <url>
+  # curl borné (connexion 30 s, 10 min max, 4 essais) ; authentifié via GH_TOKEN
+  # quand il est fourni -> GitHub ne bride plus les téléchargements anonymes.
+  # -L suit la redirection vers le stockage signé SANS renvoyer l'en-tête Auth
+  # (comportement curl par défaut), ce qui évite les refus côté stockage.
+  if [ -n "${GH_TOKEN:-}" ]; then
+    curl -fsSL --retry 4 --retry-delay 5 --retry-connrefused \
+         --connect-timeout 30 --max-time 600 \
+         -H "Authorization: Bearer $GH_TOKEN" -o "$1" "$2"
+  else
+    curl -fsSL --retry 4 --retry-delay 5 --retry-connrefused \
+         --connect-timeout 30 --max-time 600 -o "$1" "$2"
+  fi
 }
 
 BIN=build/bin/drossh
