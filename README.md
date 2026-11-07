@@ -44,16 +44,19 @@ distant — avec édition des fichiers directement dans ton éditeur habituel.
 
 ## Installation
 
-- **Arch / CachyOS / Manjaro** : l'**AppImage** (voir ci-dessous).
-  > ℹ️ La publication sur l'AUR n'est pas encore disponible — en attendant,
-  > utilise l'AppImage, qui fonctionne sur toutes les distributions.
-- **Ubuntu / Debian** : télécharger le `.deb` depuis les
-  [Releases](../../releases)
-- **Windows** : télécharger le `.exe` depuis les [Releases](../../releases)
+| Système | Fichier | Remarque |
+|---|---|---|
+| **Toute distribution Linux** | `Drossh-*.AppImage` | **Recommandé** — autonome, rien à installer |
+| **Debian 12+ / Ubuntu 22.04+** | `drossh_*_amd64.deb` | Confort `apt` ; distros plus anciennes → AppImage |
+| **Arch / CachyOS / Manjaro** | `*-archlinux-x86_64.tar.gz` ou l'AppImage | Publication AUR à venir |
+| **Windows 10/11** | `Drossh-*-windows-amd64.exe` | Fonctionne tel quel (WebView2 intégré) |
 
-### AppImage (toute distribution Linux)
+### AppImage (toute distribution Linux) — recommandé
 
-L'AppImage est un fichier unique, sans installation ni dépendances à gérer.
+L'AppImage est un fichier unique qui **embarque tout ce qu'il faut** (webkit, gtk
+et leurs dépendances). Aucune installation, aucune dépendance à gérer : elle
+fonctionne sur n'importe quelle distribution Linux récente, même sans
+`webkit2gtk` installé sur le système.
 
 1. Télécharge le fichier `Drossh-*.AppImage` depuis les [Releases](../../releases).
 2. Rends-le exécutable :
@@ -70,9 +73,8 @@ L'AppImage est un fichier unique, sans installation ni dépendances à gérer.
 > alors automatiquement. Sinon, l'outil [Gear Lever](https://flathub.org/apps/it.mijorus.gearlever)
 > gère l'intégration et les mises à jour des AppImage en un clic.
 >
-> Sous Linux, l'AppImage a besoin de `webkit2gtk-4.1` et `gtk3` sur le système
-> (déjà présents sur la plupart des bureaux). Si rien ne s'affiche (fenêtre
-> blanche) sur une carte NVIDIA, lance-le avec `WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Drossh-*.AppImage`.
+> Si rien ne s'affiche (fenêtre blanche) sur une carte NVIDIA, lance-la avec
+> `WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Drossh-*.AppImage` (déjà activé par défaut).
 
 ## Développement
 

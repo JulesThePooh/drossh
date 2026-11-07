@@ -12,7 +12,7 @@ homepage: https://github.com/JulesThePooh/drossh
 license: MIT
 depends:
   - libgtk-3-0
-  - libwebkit2gtk-4.0-37
+  - libwebkit2gtk-4.1-0
 contents:
   - src: ./build/bin/drossh
     dst: /usr/bin/drossh

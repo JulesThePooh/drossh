@@ -24,15 +24,17 @@ jobs:
       - name: Dépendances système
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev \
+            imagemagick patchelf file fuse3 desktop-file-utils python3 wget
 
       - name: Installer Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
 
-      - name: Compiler
+      - name: Compiler (webkit 4.1)
         run: |
           export PATH="$PATH:$(go env GOPATH)/bin"
-          wails build -clean
+          wails build -tags webkit2_41 -clean
 
       - name: Empaqueter (tarball + .deb + AppImage)
         run: bash packaging/linux-package.sh "${GITHUB_REF_NAME#v}"
