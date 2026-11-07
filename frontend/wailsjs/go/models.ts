@@ -110,6 +110,7 @@ export namespace main {
 	    folders: Folder[];
 	    connections: Connection[];
 	    keys: SSHKey[];
+	    language: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Store(source);
@@ -120,6 +121,7 @@ export namespace main {
 	        this.folders = this.convertValues(source["folders"], Folder);
 	        this.connections = this.convertValues(source["connections"], Connection);
 	        this.keys = this.convertValues(source["keys"], SSHKey);
+	        this.language = source["language"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -139,6 +141,24 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+	export class UpdateInfo {
+	    current: string;
+	    latest: string;
+	    url: string;
+	    newer: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.current = source["current"];
+	        this.latest = source["latest"];
+	        this.url = source["url"];
+	        this.newer = source["newer"];
+	    }
 	}
 
 }

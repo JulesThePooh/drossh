@@ -727,3 +727,56 @@ html, body {
 .crumb:hover { color: var(--accent); background: var(--bg-hover); }
 .crumb--current { color: var(--text); font-weight: 600; }
 .crumb-sep { color: var(--text-dim); opacity: .45; padding: 0 1px; }
+
+/* ===================== Actions sur une clé enregistrée ===================== */
+.key-row__actions { display: flex; gap: 2px; flex: none; }
+.key-row--editing { border-color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
+
+/* ===================== Bannière « mise à jour disponible » ===================== */
+.update-banner {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 32px);
+  padding: 9px 10px 9px 16px;
+  background: #141f2b;
+  border: 1px solid rgba(74, 163, 223, .5);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  color: var(--text);
+  font-size: 12.5px;
+  animation: fadeIn .18s ease;
+}
+.update-banner__text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.update-banner__text .dim { color: var(--text-dim); }
+.update-banner__btn {
+  flex: none;
+  padding: 6px 12px;
+  background: var(--accent);
+  color: #06121c;
+  border: none;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform .12s ease, filter .12s ease;
+}
+.update-banner__btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.update-banner__close {
+  flex: none;
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.update-banner__close:hover { background: var(--bg-hover); color: var(--text); }

@@ -2,6 +2,10 @@ build/bin
 node_modules
 frontend/dist
 
+# IDE
+.idea/
+.vscode/
+
 # binaires compilés à la racine
 /drossh
 /brise

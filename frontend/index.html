@@ -11,20 +11,20 @@
   <!-- ===== Zone GAUCHE : explorateur de fichiers (SFTP) ===== -->
   <aside class="panel panel--files">
     <div class="panel__head">
-      <span class="panel__title">Fichiers</span>
+      <span class="panel__title" data-i18n="files.title">Fichiers</span>
       <div class="panel__actions">
-        <button id="files-refresh" class="icon-btn" title="Actualiser" aria-label="Actualiser">
+        <button id="files-refresh" class="icon-btn" data-i18n-title="btn.refresh" data-i18n-aria="btn.refresh" title="Actualiser" aria-label="Actualiser">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></svg>
         </button>
       </div>
-      <button id="files-collapse" class="icon-btn panel__toggle" title="Replier" aria-label="Replier">
+      <button id="files-collapse" class="icon-btn panel__toggle" data-i18n-title="btn.collapse" data-i18n-aria="btn.collapse" title="Replier" aria-label="Replier">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 6 9 12 15 18"/></svg>
       </button>
     </div>
-    <div class="panel__path" id="files-path">/ · aucune connexion</div>
+    <div class="panel__path" id="files-path" data-i18n="files.none">/ · aucune connexion</div>
     <div class="panel__body">
       <div class="tree" id="files-tree">
-        <div class="tree__empty">
+        <div class="tree__empty" data-i18n-html="files.connectPromptHtml">
           Connecte-toi à un serveur<br/>pour voir ses fichiers.
         </div>
       </div>
@@ -35,24 +35,24 @@
   <main class="terminal">
     <div class="tabs" id="tabs">
       <div class="tabs__list" id="tabs-list"></div>
-      <button id="new-tab-btn" class="tab__new" title="Nouvelle connexion">+</button>
+      <button id="new-tab-btn" class="tab__new" data-i18n-title="btn.newConn" title="Nouvelle connexion">+</button>
     </div>
     <div class="terminal__screen">
       <div id="term-stack" class="term-stack"></div>
       <div id="welcome" class="term-welcome">
-        <pre class="term-text">
-<span class="c-accent">Drossh</span> — client SSH léger
+        <pre class="term-text"><span class="c-accent">Drossh</span> <span data-i18n="welcome.tagline">— client SSH léger</span>
 
-  Aucune session ouverte.
+
+  <span data-i18n="welcome.empty">Aucune session ouverte.</span>
 </pre>
         <button id="quick-connect-btn" class="btn-cta">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12z"/></svg>
-          Nouvelle connexion
+          <span data-i18n="btn.newConn">Nouvelle connexion</span>
         </button>
       </div>
       <div id="loader" class="loader" style="display:none;">
         <div class="spinner"></div>
-        <span>Connexion…</span>
+        <span data-i18n="loader.connecting">Connexion…</span>
       </div>
     </div>
   </main>
@@ -60,18 +60,30 @@
   <!-- ===== Zone DROITE : connexions sauvegardées ===== -->
   <aside class="panel panel--conns">
     <div class="panel__head">
-      <button id="conns-collapse" class="icon-btn panel__toggle panel__toggle--right" title="Replier" aria-label="Replier">
+      <button id="conns-collapse" class="icon-btn panel__toggle panel__toggle--right" data-i18n-title="btn.collapse" data-i18n-aria="btn.collapse" title="Replier" aria-label="Replier">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 6 9 12 15 18"/></svg>
       </button>
-      <span class="panel__title">Connexions</span>
+      <span class="panel__title" data-i18n="conns.title">Connexions</span>
       <div class="panel__actions">
-        <button id="new-folder-btn" class="icon-btn" title="Nouveau dossier" aria-label="Nouveau dossier">
+        <button id="settings-btn" class="icon-btn" data-i18n-title="btn.settings" data-i18n-aria="btn.settings" title="Réglages (export / import / mises à jour)" aria-label="Réglages">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+        <button id="keys-btn" class="icon-btn" data-i18n-title="btn.keys" data-i18n-aria="btn.keys" title="Clés SSH enregistrées" aria-label="Clés SSH enregistrées">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="7.5" cy="15.5" r="4"/>
+            <path d="M10.3 12.7 20 3M16 7l3 3M18 5l2 2"/>
+          </svg>
+        </button>
+        <button id="new-folder-btn" class="icon-btn" data-i18n-title="btn.newFolder" data-i18n-aria="btn.newFolder" title="Nouveau dossier" aria-label="Nouveau dossier">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
             <line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/>
           </svg>
         </button>
-        <button id="new-conn-btn" class="icon-btn icon-btn--accent" title="Nouvelle connexion" aria-label="Nouvelle connexion">
+        <button id="new-conn-btn" class="icon-btn icon-btn--accent" data-i18n-title="btn.newConn" data-i18n-aria="btn.newConn" title="Nouvelle connexion" aria-label="Nouvelle connexion">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
@@ -79,7 +91,7 @@
       </div>
     </div>
     <div class="panel__search">
-      <input id="conn-filter" type="text" placeholder="Filtrer…" />
+      <input id="conn-filter" type="text" data-i18n-ph="conns.filter" placeholder="Filtrer…" />
     </div>
     <div class="panel__body">
       <div class="tree" id="conn-tree"></div>
@@ -88,9 +100,9 @@
 
   <!-- ===== Barre d'état ===== -->
   <footer class="statusbar">
-    <span class="statusbar__item">Prêt</span>
+    <span class="statusbar__item" data-i18n="status.ready">Prêt</span>
     <span class="statusbar__spacer"></span>
-    <span class="statusbar__item statusbar__item--muted">Drossh v0.1 · aucune session</span>
+    <span class="statusbar__item statusbar__item--muted">Drossh · aucune session</span>
   </footer>
 
   <!-- ===== Poignées de redimensionnement ===== -->
@@ -101,53 +113,53 @@
   <div id="conn-modal" class="modal" style="display:none;">
     <div class="modal__box">
       <div class="modal__head">
-        <span id="conn-modal-title">Nouvelle connexion</span>
-        <button id="conn-modal-close" class="icon-btn" title="Fermer">✕</button>
+        <span id="conn-modal-title" data-i18n="btn.newConn">Nouvelle connexion</span>
+        <button id="conn-modal-close" class="icon-btn" data-i18n-title="btn.close" title="Fermer">✕</button>
       </div>
       <div class="modal__body">
         <div class="row">
-          <label class="grow">Nom
-            <input id="f-name" type="text" placeholder="Mon serveur" autocomplete="off"/>
+          <label class="grow"><span data-i18n="field.name">Nom</span>
+            <input id="f-name" type="text" data-i18n-ph="ph.name" placeholder="Mon serveur" autocomplete="off"/>
           </label>
-          <label class="port-lg">Dossier
+          <label class="port-lg"><span data-i18n="field.folder">Dossier</span>
             <select id="f-folder"></select>
           </label>
         </div>
         <div class="row">
-          <label class="grow">Hôte
-            <input id="f-host" type="text" placeholder="exemple.com ou 1.2.3.4" autocomplete="off"/>
+          <label class="grow"><span data-i18n="field.host">Hôte</span>
+            <input id="f-host" type="text" data-i18n-ph="ph.host" placeholder="exemple.com ou 1.2.3.4" autocomplete="off"/>
           </label>
-          <label class="port">Port
+          <label class="port"><span data-i18n="field.port">Port</span>
             <input id="f-port" type="number" value="22"/>
           </label>
         </div>
-        <label>Utilisateur
-          <input id="f-user" type="text" placeholder="root" autocomplete="off"/>
+        <label><span data-i18n="field.user">Utilisateur</span>
+          <input id="f-user" type="text" data-i18n-ph="ph.user" placeholder="root" autocomplete="off"/>
         </label>
 
         <div class="auth-tabs">
-          <button class="auth-tab auth-tab--active" data-auth="password" type="button">Mot de passe</button>
-          <button class="auth-tab" data-auth="key" type="button">Clé enregistrée</button>
+          <button class="auth-tab auth-tab--active" data-auth="password" type="button" data-i18n="auth.password">Mot de passe</button>
+          <button class="auth-tab" data-auth="key" type="button" data-i18n="auth.key">Clé enregistrée</button>
         </div>
 
         <div id="auth-password" class="auth-pane">
-          <label>Mot de passe
+          <label><span data-i18n="field.password">Mot de passe</span>
             <input id="f-password" type="password" autocomplete="off"/>
           </label>
         </div>
         <div id="auth-key" class="auth-pane" style="display:none;">
-          <label>Clé SSH
+          <label><span data-i18n="field.key">Clé SSH</span>
             <select id="f-keyid"></select>
           </label>
-          <button id="manage-keys-btn" class="btn-link" type="button">＋ Gérer les clés…</button>
+          <button id="manage-keys-btn" class="btn-link" type="button" data-i18n="conn.manageKeys">＋ Gérer les clés…</button>
         </div>
 
         <div id="conn-error" class="modal__error" style="display:none;"></div>
       </div>
       <div class="modal__foot">
-        <button id="conn-cancel" class="btn-ghost" type="button">Annuler</button>
-        <button id="conn-save" class="btn-ghost" type="button">Enregistrer</button>
-        <button id="conn-save-connect" class="btn-primary" type="button">Enregistrer &amp; connecter</button>
+        <button id="conn-cancel" class="btn-ghost" type="button" data-i18n="btn.cancel">Annuler</button>
+        <button id="conn-save" class="btn-ghost" type="button" data-i18n="btn.save">Enregistrer</button>
+        <button id="conn-save-connect" class="btn-primary" type="button" data-i18n="btn.saveConnect">Enregistrer &amp; connecter</button>
       </div>
     </div>
   </div>
@@ -156,32 +168,32 @@
   <div id="key-modal" class="modal" style="display:none;">
     <div class="modal__box">
       <div class="modal__head">
-        <span>Clés SSH enregistrées</span>
-        <button id="key-modal-close" class="icon-btn" title="Fermer">✕</button>
+        <span data-i18n="btn.keys">Clés SSH enregistrées</span>
+        <button id="key-modal-close" class="icon-btn" data-i18n-title="btn.close" title="Fermer">✕</button>
       </div>
       <div class="modal__body">
         <div id="key-list" class="key-list"></div>
         <div class="key-add">
-          <div class="key-add__title">Ajouter une clé</div>
-          <label>Nom
-            <input id="k-name" type="text" placeholder="Ma clé perso" autocomplete="off"/>
+          <div class="key-add__title" id="key-add-title" data-i18n="key.add.title">Ajouter une clé</div>
+          <label><span data-i18n="field.name">Nom</span>
+            <input id="k-name" type="text" data-i18n-ph="ph.keyName" placeholder="Ma clé perso" autocomplete="off"/>
           </label>
           <div class="field">
-            <span class="field__label">Chemin de la clé <strong>privée</strong></span>
+            <span class="field__label" data-i18n-html="key.pathLabelHtml">Chemin de la clé <strong>privée</strong></span>
             <div class="field__row">
               <input id="k-path" type="text" placeholder="~/.ssh/id_ed25519" autocomplete="off"/>
-              <button id="k-browse" class="btn-ghost btn-browse" type="button">Parcourir…</button>
+              <button id="k-browse" class="btn-ghost btn-browse" type="button" data-i18n="key.browse">Parcourir…</button>
             </div>
           </div>
-          <label>Passphrase <span class="dim">(si la clé en a une)</span>
+          <label><span data-i18n="key.passphrase">Passphrase</span> <span class="dim" data-i18n="key.passphraseHint">(si la clé en a une)</span>
             <input id="k-passphrase" type="password" autocomplete="off"/>
           </label>
           <div id="key-error" class="modal__error" style="display:none;"></div>
         </div>
       </div>
       <div class="modal__foot">
-        <button id="key-modal-done" class="btn-ghost" type="button">Fermer</button>
-        <button id="key-add-btn" class="btn-primary" type="button">Ajouter la clé</button>
+        <button id="key-modal-done" class="btn-ghost" type="button" data-i18n="btn.close">Fermer</button>
+        <button id="key-add-btn" class="btn-primary" type="button" data-i18n="key.add.btn">Ajouter la clé</button>
       </div>
     </div>
   </div>
@@ -191,7 +203,7 @@
     <div class="modal__box modal__box--sm">
       <div class="modal__head">
         <span id="text-modal-title">Titre</span>
-        <button id="text-modal-close" class="icon-btn" title="Fermer">✕</button>
+        <button id="text-modal-close" class="icon-btn" data-i18n-title="btn.close" title="Fermer">✕</button>
       </div>
       <div class="modal__body">
         <label id="text-modal-label">Nom
@@ -199,8 +211,8 @@
         </label>
       </div>
       <div class="modal__foot">
-        <button id="text-modal-cancel" class="btn-ghost" type="button">Annuler</button>
-        <button id="text-modal-ok" class="btn-primary" type="button">OK</button>
+        <button id="text-modal-cancel" class="btn-ghost" type="button" data-i18n="btn.cancel">Annuler</button>
+        <button id="text-modal-ok" class="btn-primary" type="button" data-i18n="btn.ok">OK</button>
       </div>
     </div>
   </div>
@@ -208,13 +220,13 @@
   <!-- ===== Petite fenêtre : confirmation ===== -->
   <div id="confirm-modal" class="modal" style="display:none;">
     <div class="modal__box modal__box--sm">
-      <div class="modal__head"><span>Confirmer</span></div>
+      <div class="modal__head"><span data-i18n="confirm.title">Confirmer</span></div>
       <div class="modal__body">
         <p id="confirm-modal-text" class="confirm-text"></p>
       </div>
       <div class="modal__foot">
-        <button id="confirm-modal-no" class="btn-ghost" type="button">Annuler</button>
-        <button id="confirm-modal-yes" class="btn-primary" type="button">Supprimer</button>
+        <button id="confirm-modal-no" class="btn-ghost" type="button" data-i18n="btn.cancel">Annuler</button>
+        <button id="confirm-modal-yes" class="btn-primary" type="button" data-i18n="btn.delete">Supprimer</button>
       </div>
     </div>
   </div>

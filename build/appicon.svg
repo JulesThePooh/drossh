@@ -7,6 +7,9 @@
   </defs>
   <rect width="1024" height="1024" rx="224" fill="url(#bgA)"/>
   <rect x="10" y="10" width="1004" height="1004" rx="216" fill="none" stroke="#273747" stroke-width="6"/>
-  <polyline points="312,372 470,512 312,652" fill="none" stroke="#4aa3df" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="540" y="594" width="214" height="60" rx="30" fill="#3ddc97"/>
+  <polyline points="326,366 492,512 326,658" fill="none" stroke="#4aa3df" stroke-width="82" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M576 606 v-30 a66 66 0 0 1 132 0 v30" fill="none" stroke="#3ddc97" stroke-width="30"/>
+  <rect x="556" y="606" width="172" height="124" rx="28" fill="#3ddc97"/>
+  <circle cx="642" cy="660" r="16" fill="#0b0f14"/>
+  <rect x="634" y="668" width="16" height="30" rx="8" fill="#0b0f14"/>
 </svg>

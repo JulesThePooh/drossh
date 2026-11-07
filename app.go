@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
@@ -22,6 +23,11 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/crypto/ssh"
 )
+
+// AppVersion = version courante de l'appli. Source unique de vérité :
+// elle alimente l'affichage (barre d'état) et le vérificateur de mises à jour.
+// À bumper à chaque release (en même temps que le tag git et les PKGBUILD AUR).
+const AppVersion = "0.1.3"
 
 // App struct
 type App struct {
@@ -568,6 +574,7 @@ type Store struct {
 	Folders     []Folder     `json:"folders"`
 	Connections []Connection `json:"connections"`
 	Keys        []SSHKey     `json:"keys"`
+	Language    string       `json:"language"` // code langue choisi ("" = détection auto)
 }
 
 // storePath renvoie le chemin du fichier de config (et crée le dossier).
@@ -624,4 +631,163 @@ func (a *App) SaveStore(s Store) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o600)
+}
+
+/* =========================================================================
+   Version & vérificateur de mises à jour (interroge l'API GitHub Releases)
+   ========================================================================= */
+
+// Version renvoie la version courante de l'appli (pour l'affichage).
+func (a *App) Version() string { return AppVersion }
+
+// UpdateInfo = résultat d'une vérification de mise à jour.
+type UpdateInfo struct {
+	Current string `json:"current"` // version installée
+	Latest  string `json:"latest"`  // dernière version publiée (sans le "v")
+	URL     string `json:"url"`     // page de la release à télécharger
+	Newer   bool   `json:"newer"`   // vrai si une version plus récente existe
+}
+
+// CheckUpdate interroge la dernière release GitHub et compare à la version courante.
+// Ne force rien : renvoie juste l'info, le frontend décide d'afficher ou non.
+func (a *App) CheckUpdate() (UpdateInfo, error) {
+	info := UpdateInfo{Current: AppVersion}
+
+	req, err := http.NewRequest("GET", "https://api.github.com/repos/JulesThePooh/drossh/releases/latest", nil)
+	if err != nil {
+		return info, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "drossh")
+
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return info, fmt.Errorf("vérification impossible (réseau ?) : %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return info, fmt.Errorf("GitHub a répondu %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return info, err
+	}
+
+	info.Latest = strings.TrimPrefix(strings.TrimSpace(payload.TagName), "v")
+	info.URL = payload.HTMLURL
+	info.Newer = versionLess(AppVersion, info.Latest)
+	return info, nil
+}
+
+// OpenURL ouvre un lien dans le navigateur par défaut de l'OS.
+func (a *App) OpenURL(url string) {
+	runtime.BrowserOpenURL(a.ctx, url)
+}
+
+// versionLess indique si a < b en comparant major.minor.patch.
+func versionLess(a, b string) bool {
+	av, bv := parseVersion(a), parseVersion(b)
+	for i := 0; i < 3; i++ {
+		if av[i] != bv[i] {
+			return av[i] < bv[i]
+		}
+	}
+	return false
+}
+
+func parseVersion(v string) [3]int {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	parts := strings.SplitN(v, ".", 3)
+	var out [3]int
+	for i := 0; i < 3 && i < len(parts); i++ {
+		n := 0
+		fmt.Sscanf(parts[i], "%d", &n)
+		out[i] = n
+	}
+	return out
+}
+
+/* =========================================================================
+   Export / import de la configuration (store.json) vers un autre PC
+   ========================================================================= */
+
+// ExportStore copie le store.json vers un emplacement choisi par l'utilisateur.
+// Renvoie le chemin écrit, ou "" si l'utilisateur a annulé.
+// ⚠️ Le fichier contient les secrets en clair (mots de passe, passphrases).
+func (a *App) ExportStore() (string, error) {
+	home, _ := os.UserHomeDir()
+	target, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:            "Exporter la configuration",
+		DefaultDirectory: home,
+		DefaultFilename:  "drossh-config.json",
+		Filters:          []runtime.FileFilter{{DisplayName: "Fichier JSON (*.json)", Pattern: "*.json"}},
+	})
+	if err != nil {
+		return "", err
+	}
+	if target == "" {
+		return "", nil // annulé
+	}
+
+	src, err := a.storePath()
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			data = []byte("{}")
+		} else {
+			return "", err
+		}
+	}
+	if err := os.WriteFile(target, data, 0o600); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
+// ImportStore charge un fichier de config choisi par l'utilisateur, le valide,
+// l'enregistre comme config courante et renvoie son contenu.
+// Renvoie nil (sans erreur) si l'utilisateur a annulé.
+func (a *App) ImportStore() (*Store, error) {
+	home, _ := os.UserHomeDir()
+	target, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:            "Importer une configuration",
+		DefaultDirectory: home,
+		Filters:          []runtime.FileFilter{{DisplayName: "Fichier JSON (*.json)", Pattern: "*.json"}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if target == "" {
+		return nil, nil // annulé
+	}
+
+	data, err := os.ReadFile(target)
+	if err != nil {
+		return nil, fmt.Errorf("lecture impossible : %w", err)
+	}
+	var s Store
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil, fmt.Errorf("fichier invalide (ce n'est pas une config Drossh ?) : %w", err)
+	}
+	if s.Folders == nil {
+		s.Folders = []Folder{}
+	}
+	if s.Connections == nil {
+		s.Connections = []Connection{}
+	}
+	if s.Keys == nil {
+		s.Keys = []SSHKey{}
+	}
+	if err := a.SaveStore(s); err != nil {
+		return nil, err
+	}
+	return &s, nil
 }

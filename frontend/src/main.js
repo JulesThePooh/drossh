@@ -2,11 +2,12 @@ import './style.css';
 import '@xterm/xterm/css/xterm.css';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { Connect, SendInput, Resize, Disconnect, LoadStore, SaveStore, PickKeyFile, HomeDir, ListDir, EditFile, MakeDir, MakeFile, Remove } from '../wailsjs/go/main/App';
+import { Connect, SendInput, Resize, Disconnect, LoadStore, SaveStore, PickKeyFile, HomeDir, ListDir, EditFile, MakeDir, MakeFile, Remove, Version, CheckUpdate, OpenURL, ExportStore, ImportStore } from '../wailsjs/go/main/App';
 import { EventsOn, ClipboardSetText, ClipboardGetText } from '../wailsjs/runtime/runtime';
+import { LANGS, t, setLang, getLang, detectLang, applyStaticI18n } from './i18n';
 
 /* ===================== État ===================== */
-let store = { folders: [], connections: [], keys: [] };
+let store = { folders: [], connections: [], keys: [], language: '' };
 let sessions = [];          // [{id, label, term, fit, pane, connId, closed}]
 let activeSid = null;
 let editingConnId = null;
@@ -15,6 +16,8 @@ let draggedConnId = null;
 let draggedFolderId = null;
 let draggedSid = null;
 let filterText = '';
+let editingKeyId = null;     // clé SSH en cours de modification (null = ajout)
+let appVersion = '0.1.3';    // remplacé par Version() au démarrage
 
 function uid() {
   return (crypto.randomUUID ? crypto.randomUUID() : 's' + Date.now() + Math.random().toString(16).slice(2));
@@ -28,7 +31,7 @@ function persist() { SaveStore(store).catch((e) => console.error('save', e)); }
 async function loadStore() {
   try {
     const s = await LoadStore();
-    store = { folders: s.folders || [], connections: s.connections || [], keys: s.keys || [] };
+    store = { folders: s.folders || [], connections: s.connections || [], keys: s.keys || [], language: s.language || '' };
   } catch (e) { console.error('load', e); }
 }
 
@@ -149,7 +152,7 @@ function renderTree() {
   });
 
   if (store.connections.length === 0 && store.folders.length === 0) {
-    connTree.appendChild(el(`<div class="tree__empty">Aucune connexion.<br/>Clique sur <b>+</b> pour en créer une.</div>`));
+    connTree.appendChild(el(`<div class="tree__empty">${t('tree.empty.connsHtml')}</div>`));
   }
 }
 
@@ -228,13 +231,13 @@ function toast(message, kind = 'info') {
 
 /* ===================== Dossiers ===================== */
 async function addFolder() {
-  const name = await askText('Nouveau dossier', 'Nom du dossier');
+  const name = await askText(t('btn.newFolder'), t('dlg.folderName'));
   if (!name) return;
   store.folders.push({ id: uid(), name });
   persist(); renderTree();
 }
 async function deleteFolder(folder) {
-  const ok = await askConfirm(`Supprimer le dossier « ${folder.name} » ? Les connexions à l'intérieur repasseront à la racine.`);
+  const ok = await askConfirm(t('confirm.deleteFolder', { name: folder.name }));
   if (!ok) return;
   store.folders = store.folders.filter((f) => f.id !== folder.id);
   store.connections.forEach((c) => { if (c.folderId === folder.id) c.folderId = ''; });
@@ -243,7 +246,7 @@ async function deleteFolder(folder) {
 
 /* ===================== Connexions (CRUD) ===================== */
 async function deleteConnection(conn) {
-  const ok = await askConfirm(`Supprimer la connexion « ${conn.name || conn.host} » ?`);
+  const ok = await askConfirm(t('confirm.deleteConn', { name: conn.name || conn.host }));
   if (!ok) return;
   store.connections = store.connections.filter((c) => c.id !== conn.id);
   persist(); renderTree();
@@ -254,7 +257,7 @@ const connError = document.getElementById('conn-error');
 
 function populateFolderSelect(selected) {
   const sel = document.getElementById('f-folder');
-  sel.innerHTML = '<option value="">— Aucun —</option>';
+  sel.innerHTML = `<option value="">${t('folder.none')}</option>`;
   store.folders.forEach((f) => {
     const o = document.createElement('option');
     o.value = f.id; o.textContent = f.name;
@@ -265,7 +268,7 @@ function populateFolderSelect(selected) {
 function populateKeySelect(selected) {
   const sel = document.getElementById('f-keyid');
   sel.innerHTML = '';
-  if (store.keys.length === 0) { sel.innerHTML = '<option value="">(aucune clé enregistrée)</option>'; return; }
+  if (store.keys.length === 0) { sel.innerHTML = `<option value="">${t('key.selectNone')}</option>`; return; }
   store.keys.forEach((k) => {
     const o = document.createElement('option');
     o.value = k.id; o.textContent = k.name;
@@ -280,7 +283,7 @@ function setAuthTab(which) {
 }
 function openConnModal(conn = null) {
   editingConnId = conn ? conn.id : null;
-  document.getElementById('conn-modal-title').textContent = conn ? 'Modifier la connexion' : 'Nouvelle connexion';
+  document.getElementById('conn-modal-title').textContent = conn ? t('conn.edit') : t('btn.newConn');
   document.getElementById('f-name').value = conn ? (conn.name || '') : '';
   document.getElementById('f-host').value = conn ? conn.host : '';
   document.getElementById('f-port').value = conn ? (conn.port || 22) : 22;
@@ -301,9 +304,9 @@ function readConnForm() {
   const host = document.getElementById('f-host').value.trim();
   const user = document.getElementById('f-user').value.trim();
   const fail = (msg) => { connError.textContent = msg; connError.style.display = 'block'; return null; };
-  if (!name) return fail('Le nom est obligatoire.');
-  if (!host || !user) return fail('Hôte et utilisateur sont obligatoires.');
-  if (authType === 'key' && store.keys.length === 0) return fail('Aucune clé enregistrée. Clique sur « Gérer les clés ».');
+  if (!name) return fail(t('err.nameRequired'));
+  if (!host || !user) return fail(t('err.hostUserRequired'));
+  if (authType === 'key' && store.keys.length === 0) return fail(t('err.noKeys'));
   return {
     id: editingConnId || uid(),
     name,
@@ -369,7 +372,7 @@ async function startNewTab(opts, label, connId) {
   const loader = document.getElementById('loader');
   loader.style.display = 'flex';
   try { await createSession(opts, label, connId); }
-  catch (e) { toast('Connexion échouée : ' + String(e), 'error'); }
+  catch (e) { toast(t('toast.connFailed', { err: String(e) }), 'error'); }
   finally { loader.style.display = 'none'; }
 }
 function openFromConnection(conn) {
@@ -379,7 +382,7 @@ function openFromConnection(conn) {
 // On NE touche PAS au terminal courant (qui peut être en nano, crontab -e, etc.).
 function openTerminalHere(s, dir) {
   const conn = store.connections.find((c) => c.id === s.connId);
-  if (!conn) { toast('Connexion introuvable pour ce terminal', 'error'); return; }
+  if (!conn) { toast(t('toast.connNotFound'), 'error'); return; }
   const opts = optsFromConnection(conn);
   opts.initialDir = dir;
   startNewTab(opts, conn.name || conn.host, conn.id);
@@ -392,13 +395,13 @@ function activateSession(id) {
   const s = sessions.find((x) => x.id === id);
   if (s) {
     s.fit.fit(); Resize(id, s.term.cols, s.term.rows); s.term.focus();
-    setStatus('Connecté à ' + s.host);
+    setStatus(t('status.connectedTo', { host: s.host }));
     refreshFiles();
   }
 }
 function setStatus(text) {
   const m = document.querySelector('.statusbar__item--muted');
-  if (m) m.textContent = 'Drossh v0.1 · ' + text;
+  if (m) m.textContent = 'Drossh v' + appVersion + ' · ' + text;
 }
 
 async function closeTab(id) {
@@ -412,7 +415,7 @@ async function closeTab(id) {
   if (activeSid === id) {
     const next = sessions[idx] || sessions[idx - 1] || null;
     if (next) activateSession(next.id);
-    else { activeSid = null; document.getElementById('welcome').style.display = ''; setStatus('aucune session'); renderTabs(); refreshFiles(); }
+    else { activeSid = null; document.getElementById('welcome').style.display = ''; setStatus(t('status.noSession')); renderTabs(); refreshFiles(); }
   } else {
     renderTabs();
   }
@@ -476,9 +479,9 @@ window.addEventListener('resize', () => {
 });
 
 // Édition de fichiers (retours du moteur Go)
-EventsOn('file:editing', (p) => toast('✏️ ' + p.split('/').pop() + ' ouvert — sauvegarde = envoi auto', 'info'));
-EventsOn('file:uploaded', (p) => toast('✓ ' + p.split('/').pop() + ' enregistré sur le serveur', 'ok'));
-EventsOn('file:error', (o) => toast('Échec de l’envoi : ' + (o && o.error ? o.error : ''), 'error'));
+EventsOn('file:editing', (p) => toast(t('toast.editOpened', { name: p.split('/').pop() }), 'info'));
+EventsOn('file:uploaded', (p) => toast(t('toast.saved', { name: p.split('/').pop() }), 'ok'));
+EventsOn('file:error', (o) => toast(t('toast.uploadFail', { err: (o && o.error ? o.error : '') }), 'error'));
 
 /* ===================== Gestionnaire de clés ===================== */
 const keyModal = document.getElementById('key-modal');
@@ -487,28 +490,50 @@ const keyError = document.getElementById('key-error');
 function renderKeyList() {
   const list = document.getElementById('key-list');
   list.innerHTML = '';
-  if (store.keys.length === 0) { list.appendChild(el(`<div class="tree__empty" style="padding:14px">Aucune clé enregistrée.</div>`)); return; }
+  if (store.keys.length === 0) { list.appendChild(el(`<div class="tree__empty" style="padding:14px">${t('key.none')}</div>`)); return; }
   store.keys.forEach((k) => {
-    const row = el(`<div class="key-row">
+    const row = el(`<div class="key-row${k.id === editingKeyId ? ' key-row--editing' : ''}">
       <div class="key-row__info"><div class="key-row__name"></div><div class="key-row__path"></div></div>
-      <button class="row-btn" title="Supprimer">🗑</button>
+      <div class="key-row__actions">
+        <button class="row-btn" data-act="edit" title="${t('btn.edit')}">✎</button>
+        <button class="row-btn" data-act="del" title="${t('btn.delete')}">🗑</button>
+      </div>
     </div>`);
     row.querySelector('.key-row__name').textContent = k.name;
     row.querySelector('.key-row__path').textContent = k.path + (k.passphrase ? '  🔒' : '');
-    row.querySelector('.row-btn').addEventListener('click', async () => {
-      const ok = await askConfirm(`Supprimer la clé « ${k.name} » ?`);
+    row.querySelector('[data-act="edit"]').addEventListener('click', () => startEditKey(k));
+    row.querySelector('[data-act="del"]').addEventListener('click', async () => {
+      const ok = await askConfirm(t('confirm.deleteKey', { name: k.name }));
       if (!ok) return;
       store.keys = store.keys.filter((x) => x.id !== k.id);
+      if (editingKeyId === k.id) resetKeyForm();
       persist(); renderKeyList();
     });
     list.appendChild(row);
   });
 }
-function openKeyModal() {
-  keyError.style.display = 'none';
+function resetKeyForm() {
+  editingKeyId = null;
   document.getElementById('k-name').value = '';
   document.getElementById('k-path').value = '';
   document.getElementById('k-passphrase').value = '';
+  document.getElementById('key-add-title').textContent = t('key.add.title');
+  document.getElementById('key-add-btn').textContent = t('key.add.btn');
+  keyError.style.display = 'none';
+}
+function startEditKey(k) {
+  editingKeyId = k.id;
+  document.getElementById('k-name').value = k.name;
+  document.getElementById('k-path').value = k.path;
+  document.getElementById('k-passphrase').value = k.passphrase || '';
+  document.getElementById('key-add-title').textContent = t('key.edit.title');
+  document.getElementById('key-add-btn').textContent = t('key.edit.btn');
+  keyError.style.display = 'none';
+  renderKeyList();
+  document.getElementById('k-name').focus();
+}
+function openKeyModal() {
+  resetKeyForm();
   renderKeyList();
   keyModal.style.display = 'flex';
 }
@@ -516,13 +541,15 @@ function addKey() {
   const name = document.getElementById('k-name').value.trim();
   const path = document.getElementById('k-path').value.trim();
   const passphrase = document.getElementById('k-passphrase').value;
-  if (!name || !path) { keyError.textContent = 'Nom et chemin sont obligatoires.'; keyError.style.display = 'block'; return; }
-  store.keys.push({ id: uid(), name, path, passphrase });
+  if (!name || !path) { keyError.textContent = t('err.keyNameRequired'); keyError.style.display = 'block'; return; }
+  if (editingKeyId) {
+    const k = store.keys.find((x) => x.id === editingKeyId);
+    if (k) { k.name = name; k.path = path; k.passphrase = passphrase; }
+  } else {
+    store.keys.push({ id: uid(), name, path, passphrase });
+  }
   persist();
-  document.getElementById('k-name').value = '';
-  document.getElementById('k-path').value = '';
-  document.getElementById('k-passphrase').value = '';
-  keyError.style.display = 'none';
+  resetKeyForm();
   renderKeyList();
 }
 
@@ -546,6 +573,7 @@ document.getElementById('conn-save-connect').addEventListener('click', () => {
 });
 
 document.getElementById('manage-keys-btn').addEventListener('click', openKeyModal);
+document.getElementById('keys-btn').addEventListener('click', openKeyModal);
 document.getElementById('key-add-btn').addEventListener('click', addKey);
 document.getElementById('k-browse').addEventListener('click', async () => {
   try { const p = await PickKeyFile(); if (p) document.getElementById('k-path').value = p; }
@@ -556,6 +584,98 @@ document.getElementById('key-modal-close').addEventListener('click', closeKeyMod
 document.getElementById('key-modal-done').addEventListener('click', closeKeyModal);
 
 document.getElementById('conn-filter').addEventListener('input', (e) => { filterText = e.target.value.trim(); renderTree(); });
+
+/* ===================== Réglages : langue + export/import + mises à jour ===================== */
+document.getElementById('settings-btn').addEventListener('click', openSettingsMenu);
+
+function openSettingsMenu() {
+  const r = document.getElementById('settings-btn').getBoundingClientRect();
+  showMenu(r.left, r.bottom + 4, [
+    { label: t('menu.language') + '  ▸', onClick: openLanguageMenu },
+    { sep: true },
+    { label: t('menu.export'), onClick: exportConfig },
+    { label: t('menu.import'), onClick: importConfig },
+    { sep: true },
+    { label: t('menu.checkUpdate'), onClick: () => doCheckUpdate(true) },
+  ]);
+}
+function openLanguageMenu() {
+  const cur = getLang();
+  const r = document.getElementById('settings-btn').getBoundingClientRect();
+  showMenu(r.left, r.bottom + 4, LANGS.map((l) => ({
+    label: (l.code === cur ? '✓ ' : ' ') + l.name,
+    onClick: () => setLanguage(l.code),
+  })));
+}
+function setLanguage(code) {
+  setLang(code);
+  store.language = code;
+  persist();
+  applyI18n();
+}
+// applyI18n : ré-applique les traductions partout (statique + parties dynamiques).
+function applyI18n() {
+  applyStaticI18n();
+  renderTree();
+  renderTabs();
+  if (keyModal.style.display === 'flex') renderKeyList();
+  const s = sessions.find((x) => x.id === activeSid);
+  if (s) setStatus(t('status.connectedTo', { host: s.host }));
+  else {
+    const m = document.querySelector('.statusbar__item--muted');
+    if (m) m.textContent = 'Drossh v' + appVersion + ' · ' + t('status.noSession');
+  }
+  refreshFiles();
+}
+
+async function exportConfig() {
+  try {
+    const path = await ExportStore();
+    if (path) toast(t('toast.exported', { path }), 'ok');
+  } catch (e) { toast(t('toast.exportFail', { err: String(e) }), 'error'); }
+}
+async function importConfig() {
+  const ok = await askConfirm(t('confirm.import'));
+  if (!ok) return;
+  try {
+    const s = await ImportStore();
+    if (!s) return; // annulé dans le sélecteur de fichier
+    store = { folders: s.folders || [], connections: s.connections || [], keys: s.keys || [], language: s.language || store.language };
+    selectedConnId = null;
+    if (store.language) setLang(store.language); // la langue importée prend le dessus
+    applyI18n();
+    toast(t('toast.imported'), 'ok');
+  } catch (e) { toast(t('toast.importFail', { err: String(e) }), 'error'); }
+}
+
+/* --- Vérificateur de mises à jour --- */
+async function doCheckUpdate(manual) {
+  try {
+    const info = await CheckUpdate();
+    if (info.newer) showUpdateBanner(info);
+    else if (manual) toast(t('update.uptodate', { v: info.current }), 'ok');
+  } catch (e) {
+    if (manual) toast(t('update.checkFail', { err: String(e) }), 'error');
+  }
+}
+function showUpdateBanner(info) {
+  if (document.getElementById('update-banner')) return;
+  const bar = el(`<div id="update-banner" class="update-banner">
+    <span class="update-banner__text">${t('update.bannerHtml', { latest: info.latest, current: info.current })}</span>
+    <button class="update-banner__btn" type="button">${t('update.download')}</button>
+    <button class="update-banner__close" type="button" title="${t('update.later')}">×</button>
+  </div>`);
+  bar.querySelector('.update-banner__btn').addEventListener('click', () => OpenURL(info.url));
+  bar.querySelector('.update-banner__close').addEventListener('click', () => bar.remove());
+  document.body.appendChild(bar);
+}
+async function initVersion() {
+  try { appVersion = await Version(); } catch (_) {}
+  if (!activeSid) {
+    const m = document.querySelector('.statusbar__item--muted');
+    if (m) m.textContent = 'Drossh v' + appVersion + ' · ' + t('status.noSession');
+  }
+}
 
 /* ===================== Explorateur SFTP ===================== */
 const filesTree = document.getElementById('files-tree');
@@ -623,8 +743,8 @@ function parentPath(p) {
 async function refreshFiles() {
   const s = sessions.find((x) => x.id === activeSid);
   if (!s) {
-    filesTree.innerHTML = '<div class="tree__empty">Connecte-toi à un serveur<br/>pour voir ses fichiers.</div>';
-    filesPath.textContent = '/ · aucune connexion';
+    filesTree.innerHTML = `<div class="tree__empty">${t('files.connectPromptHtml')}</div>`;
+    filesPath.textContent = t('files.none');
     filesPath.title = '';
     return;
   }
@@ -633,7 +753,7 @@ async function refreshFiles() {
     await listInto(s, p);
   } catch (e) {
     filesTree.innerHTML = '';
-    filesTree.appendChild(el(`<div class="tree__empty">Erreur SFTP :<br/>${String(e)}</div>`));
+    filesTree.appendChild(el(`<div class="tree__empty">${t('files.sftpErrorHtml', { err: String(e) })}</div>`));
   }
 }
 
@@ -700,18 +820,18 @@ function renderFiles(s, p, entries) {
       e.preventDefault(); e.stopPropagation();
       const items = entry.isDir
         ? [
-            { label: 'Ouvrir', onClick: () => listInto(s, entry.path).catch((err) => toast(String(err), 'error')) },
-            { label: 'Ouvrir un terminal ici', onClick: () => openTerminalHere(s, entry.path) },
+            { label: t('ctx.open'), onClick: () => listInto(s, entry.path).catch((err) => toast(String(err), 'error')) },
+            { label: t('ctx.openTermHere'), onClick: () => openTerminalHere(s, entry.path) },
             { sep: true },
-            { label: 'Nouveau dossier ici…', onClick: () => newDirIn(s, entry.path) },
-            { label: 'Nouveau fichier ici…', onClick: () => newFileIn(s, entry.path) },
+            { label: t('ctx.newDirHere'), onClick: () => newDirIn(s, entry.path) },
+            { label: t('ctx.newFileHere'), onClick: () => newFileIn(s, entry.path) },
             { sep: true },
-            { label: 'Supprimer', danger: true, onClick: () => removeEntry(s, entry) },
+            { label: t('btn.delete'), danger: true, onClick: () => removeEntry(s, entry) },
           ]
         : [
-            { label: 'Ouvrir dans l’éditeur', onClick: () => openEdit(s, entry) },
+            { label: t('ctx.openInEditor'), onClick: () => openEdit(s, entry) },
             { sep: true },
-            { label: 'Supprimer', danger: true, onClick: () => removeEntry(s, entry) },
+            { label: t('btn.delete'), danger: true, onClick: () => removeEntry(s, entry) },
           ];
       showMenu(e.clientX, e.clientY, items);
     });
@@ -720,40 +840,40 @@ function renderFiles(s, p, entries) {
 }
 
 function openEdit(s, entry) {
-  toast('Ouverture de ' + entry.name + ' dans ton éditeur…', 'info');
-  EditFile(s.id, entry.path).catch((e) => toast('Erreur : ' + String(e), 'error'));
+  toast(t('toast.openingInEditor', { name: entry.name }), 'info');
+  EditFile(s.id, entry.path).catch((e) => toast(t('toast.editError', { err: String(e) }), 'error'));
 }
 function joinPath(dir, name) {
   return (dir.endsWith('/') ? dir : dir + '/') + name;
 }
 async function newDirIn(s, parentDir) {
-  const name = await askText('Nouveau dossier', 'Nom du dossier');
+  const name = await askText(t('btn.newFolder'), t('dlg.folderName'));
   if (!name) return;
   try {
     await MakeDir(s.id, joinPath(parentDir, name));
-    toast('Dossier créé', 'ok');
+    toast(t('toast.dirCreated'), 'ok');
     if (s.cwd) listInto(s, s.cwd);
-  } catch (e) { toast('Création impossible : ' + String(e), 'error'); }
+  } catch (e) { toast(t('toast.createFail', { err: String(e) }), 'error'); }
 }
 async function newFileIn(s, parentDir) {
-  const name = await askText('Nouveau fichier', 'Nom du fichier');
+  const name = await askText(t('dlg.newFile.title'), t('dlg.fileName'));
   if (!name) return;
   const p = joinPath(parentDir, name);
   try {
     await MakeFile(s.id, p);
-    toast('Fichier créé', 'ok');
+    toast(t('toast.fileCreated'), 'ok');
     if (s.cwd) await listInto(s, s.cwd);
     openEdit(s, { name, path: p, isDir: false }); // ouvre direct dans l'éditeur
-  } catch (e) { toast('Création impossible : ' + String(e), 'error'); }
+  } catch (e) { toast(t('toast.createFail', { err: String(e) }), 'error'); }
 }
 async function removeEntry(s, entry) {
-  const ok = await askConfirm(`Supprimer « ${entry.name} »${entry.isDir ? ' et tout son contenu' : ''} ?`);
+  const ok = await askConfirm(t('confirm.deleteEntry', { name: entry.name, suffix: entry.isDir ? t('confirm.deleteEntry.suffix') : '' }));
   if (!ok) return;
   try {
     await Remove(s.id, entry.path);
-    toast('Supprimé', 'ok');
+    toast(t('toast.deleted'), 'ok');
     if (s.cwd) listInto(s, s.cwd);
-  } catch (e) { toast('Suppression impossible : ' + String(e), 'error'); }
+  } catch (e) { toast(t('toast.deleteFail', { err: String(e) }), 'error'); }
 }
 
 function fitActive() {
@@ -769,12 +889,12 @@ filesTree.closest('.panel__body').addEventListener('contextmenu', (e) => {
   const s = sessions.find((x) => x.id === activeSid);
   if (!s) return;
   showMenu(e.clientX, e.clientY, [
-    { label: 'Ouvrir un terminal ici', onClick: () => openTerminalHere(s, s.cwd || '/') },
+    { label: t('ctx.openTermHere'), onClick: () => openTerminalHere(s, s.cwd || '/') },
     { sep: true },
-    { label: 'Nouveau dossier ici…', onClick: () => newDirIn(s, s.cwd || '/') },
-    { label: 'Nouveau fichier ici…', onClick: () => newFileIn(s, s.cwd || '/') },
+    { label: t('ctx.newDirHere'), onClick: () => newDirIn(s, s.cwd || '/') },
+    { label: t('ctx.newFileHere'), onClick: () => newFileIn(s, s.cwd || '/') },
     { sep: true },
-    { label: 'Actualiser', onClick: refreshFiles },
+    { label: t('btn.refresh'), onClick: refreshFiles },
   ]);
 });
 
@@ -853,4 +973,11 @@ setupResizer(document.getElementById('resizer-files'), 'files');
 setupResizer(document.getElementById('resizer-conns'), 'conns');
 
 /* ===================== Démarrage ===================== */
-loadStore().then(renderTree);
+(async () => {
+  await loadStore();
+  setLang(detectLang(store.language)); // langue sauvée > langue système > anglais
+  applyStaticI18n();
+  renderTree();
+  await initVersion();
+  doCheckUpdate(false); // vérification silencieuse au démarrage (n'affiche que si MAJ dispo)
+})();
