@@ -27,7 +27,7 @@ import (
 // AppVersion = version courante de l'appli. Source unique de vérité :
 // elle alimente l'affichage (barre d'état) et le vérificateur de mises à jour.
 // À bumper à chaque release (en même temps que le tag git et les PKGBUILD AUR).
-const AppVersion = "0.1.3"
+const AppVersion = "0.1.4"
 
 // App struct
 type App struct {
