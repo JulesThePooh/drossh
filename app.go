@@ -530,6 +530,170 @@ func removeRecursive(c *sftp.Client, p string) error {
 	return c.Remove(p)
 }
 
+/* =========================================================================
+   Transferts : télécharger (fichier / dossier), importer, extraire
+   ========================================================================= */
+
+// DownloadFileTo télécharge un fichier distant vers un emplacement local choisi
+// par l'utilisateur (boîte "Enregistrer sous…"). Renvoie le chemin local, ou "" si annulé.
+func (a *App) DownloadFileTo(id string, remotePath string) (string, error) {
+	c, err := a.getSFTP(id)
+	if err != nil {
+		return "", err
+	}
+	target, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Enregistrer le fichier sous…",
+		DefaultFilename: path.Base(remotePath),
+	})
+	if err != nil {
+		return "", err
+	}
+	if target == "" {
+		return "", nil // annulé
+	}
+	if err := a.downloadFile(c, remotePath, target); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
+// DownloadDirTo télécharge récursivement un dossier distant dans un dossier local
+// choisi par l'utilisateur. Renvoie le chemin local créé, ou "" si annulé.
+func (a *App) DownloadDirTo(id string, remotePath string) (string, error) {
+	c, err := a.getSFTP(id)
+	if err != nil {
+		return "", err
+	}
+	dest, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Où enregistrer le dossier ?",
+	})
+	if err != nil {
+		return "", err
+	}
+	if dest == "" {
+		return "", nil // annulé
+	}
+	target := filepath.Join(dest, path.Base(remotePath))
+	if err := a.downloadDir(c, remotePath, target); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
+// downloadDir copie récursivement remoteDir vers localDir (fichiers réguliers uniquement).
+func (a *App) downloadDir(c *sftp.Client, remoteDir, localDir string) error {
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
+		return err
+	}
+	entries, err := c.ReadDir(remoteDir)
+	if err != nil {
+		return err
+	}
+	for _, fi := range entries {
+		rp := path.Join(remoteDir, fi.Name())
+		lp := filepath.Join(localDir, fi.Name())
+		switch {
+		case fi.IsDir():
+			if err := a.downloadDir(c, rp, lp); err != nil {
+				return err
+			}
+		case fi.Mode().IsRegular():
+			if err := a.downloadFile(c, rp, lp); err != nil {
+				return err
+			}
+			// les liens/fichiers spéciaux sont ignorés
+		}
+	}
+	return nil
+}
+
+// UploadFileTo demande un fichier local et l'uploade dans remoteDir.
+// Renvoie le nom du fichier importé, ou "" si annulé.
+func (a *App) UploadFileTo(id string, remoteDir string) (string, error) {
+	c, err := a.getSFTP(id)
+	if err != nil {
+		return "", err
+	}
+	local, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Choisir un fichier à importer",
+	})
+	if err != nil {
+		return "", err
+	}
+	if local == "" {
+		return "", nil // annulé
+	}
+	name := filepath.Base(local)
+	remotePath := path.Join(remoteDir, name)
+	if err := a.uploadFile(c, local, remotePath); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+// ExtractArchive extrait une archive distante dans son propre dossier, côté serveur
+// (l'outil adéquat doit être installé sur le serveur : tar, unzip, unrar, 7z…).
+func (a *App) ExtractArchive(id string, remotePath string) error {
+	s := a.get(id)
+	if s == nil {
+		return fmt.Errorf("session introuvable")
+	}
+	cmd := extractCommand(path.Base(remotePath))
+	if cmd == "" {
+		return fmt.Errorf("format d'archive non reconnu")
+	}
+	full := "cd " + shellQuote(path.Dir(remotePath)) + " && " + cmd
+	sess, err := s.client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer sess.Close()
+	out, err := sess.CombinedOutput(full)
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("%s", msg)
+	}
+	return nil
+}
+
+// extractCommand renvoie la commande shell d'extraction selon l'extension (nom déjà
+// protégé par shellQuote), ou "" si le format n'est pas reconnu.
+func extractCommand(name string) string {
+	q := shellQuote(name)
+	l := strings.ToLower(name)
+	switch {
+	case strings.HasSuffix(l, ".tar.gz"), strings.HasSuffix(l, ".tgz"):
+		return "tar -xzf " + q
+	case strings.HasSuffix(l, ".tar.bz2"), strings.HasSuffix(l, ".tbz2"):
+		return "tar -xjf " + q
+	case strings.HasSuffix(l, ".tar.xz"), strings.HasSuffix(l, ".txz"):
+		return "tar -xJf " + q
+	case strings.HasSuffix(l, ".tar.zst"), strings.HasSuffix(l, ".tzst"):
+		return "tar --zstd -xf " + q
+	case strings.HasSuffix(l, ".tar"):
+		return "tar -xf " + q
+	case strings.HasSuffix(l, ".zip"):
+		return "unzip -o " + q
+	case strings.HasSuffix(l, ".rar"):
+		return "unrar x -o+ " + q
+	case strings.HasSuffix(l, ".7z"):
+		return "7z x -y " + q
+	case strings.HasSuffix(l, ".gz"):
+		return "gunzip -k " + q
+	case strings.HasSuffix(l, ".bz2"):
+		return "bunzip2 -k " + q
+	case strings.HasSuffix(l, ".xz"):
+		return "unxz -k " + q
+	case strings.HasSuffix(l, ".zst"):
+		return "unzstd -k " + q
+	default:
+		return ""
+	}
+}
+
 // PickKeyFile ouvre un sélecteur de fichier natif (démarre dans ~/.ssh).
 func (a *App) PickKeyFile() (string, error) {
 	start := ""

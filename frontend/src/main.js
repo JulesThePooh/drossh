@@ -2,7 +2,7 @@ import './style.css';
 import '@xterm/xterm/css/xterm.css';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { Connect, SendInput, Resize, Disconnect, LoadStore, SaveStore, PickKeyFile, HomeDir, ListDir, EditFile, MakeDir, MakeFile, Remove, Version, CheckUpdate, OpenURL, ExportStore, ImportStore } from '../wailsjs/go/main/App';
+import { Connect, SendInput, Resize, Disconnect, LoadStore, SaveStore, PickKeyFile, HomeDir, ListDir, EditFile, MakeDir, MakeFile, Remove, Version, CheckUpdate, OpenURL, ExportStore, ImportStore, DownloadFileTo, DownloadDirTo, UploadFileTo, ExtractArchive } from '../wailsjs/go/main/App';
 import { EventsOn, ClipboardSetText, ClipboardGetText } from '../wailsjs/runtime/runtime';
 import { LANGS, t, setLang, getLang, detectLang, applyStaticI18n } from './i18n';
 
@@ -350,8 +350,10 @@ function makeTerminal(sid, pane) {
   // Copier (Ctrl+Maj+C) / Coller (Ctrl+Maj+V, via term.paste → bracketed paste).
   t.attachCustomKeyEventHandler((e) => {
     if (e.type !== 'keydown' || !e.ctrlKey || !e.shiftKey) return true;
-    if (e.code === 'KeyC') { const s = t.getSelection(); if (s) ClipboardSetText(s); return false; }
-    if (e.code === 'KeyV') { ClipboardGetText().then((x) => { if (x) t.paste(x); }); return false; }
+    if (e.code === 'KeyC') { e.preventDefault(); const s = t.getSelection(); if (s) ClipboardSetText(s); return false; }
+    // preventDefault() indispensable : sans lui, webkit déclenche AUSSI un collage
+    // natif en plus de notre t.paste() → le texte était collé en double.
+    if (e.code === 'KeyV') { e.preventDefault(); ClipboardGetText().then((x) => { if (x) t.paste(x); }); return false; }
     return true;
   });
   t.onData((d) => SendInput(sid, d));
@@ -823,6 +825,9 @@ function renderFiles(s, p, entries) {
             { label: t('ctx.open'), onClick: () => listInto(s, entry.path).catch((err) => toast(String(err), 'error')) },
             { label: t('ctx.openTermHere'), onClick: () => openTerminalHere(s, entry.path) },
             { sep: true },
+            { label: t('ctx.downloadDir'), onClick: () => downloadDirEntry(s, entry.path) },
+            { label: t('ctx.importHere'), onClick: () => importInto(s, entry.path) },
+            { sep: true },
             { label: t('ctx.newDirHere'), onClick: () => newDirIn(s, entry.path) },
             { label: t('ctx.newFileHere'), onClick: () => newFileIn(s, entry.path) },
             { sep: true },
@@ -830,6 +835,10 @@ function renderFiles(s, p, entries) {
           ]
         : [
             { label: t('ctx.openInEditor'), onClick: () => openEdit(s, entry) },
+            { label: t('ctx.downloadFile'), onClick: () => downloadFileEntry(s, entry) },
+            ...(isArchive(entry.name) ? [{ label: t('ctx.extractHere'), onClick: () => extractHere(s, entry) }] : []),
+            { sep: true },
+            { label: t('ctx.importHere'), onClick: () => importInto(s, s.cwd || parentPath(entry.path)) },
             { sep: true },
             { label: t('btn.delete'), danger: true, onClick: () => removeEntry(s, entry) },
           ];
@@ -876,6 +885,45 @@ async function removeEntry(s, entry) {
   } catch (e) { toast(t('toast.deleteFail', { err: String(e) }), 'error'); }
 }
 
+// Reconnaît une archive extractible d'après son extension.
+function isArchive(name) {
+  return /\.(tar\.(gz|bz2|xz|zst)|tgz|tbz2|txz|tzst|tar|zip|rar|7z|gz|bz2|xz|zst)$/i.test(name);
+}
+
+// Télécharger un fichier distant → boîte "Enregistrer sous…" (choix de l'emplacement local).
+async function downloadFileEntry(s, entry) {
+  try {
+    const p = await DownloadFileTo(s.id, entry.path);
+    if (p) toast(t('toast.downloaded', { path: p }), 'ok');
+  } catch (e) { toast(t('toast.downloadFail', { err: String(e) }), 'error'); }
+}
+// Télécharger un dossier distant (récursif) → boîte "choisir le dossier de destination".
+async function downloadDirEntry(s, remotePath) {
+  try {
+    const p = await DownloadDirTo(s.id, remotePath);
+    if (p) toast(t('toast.downloaded', { path: p }), 'ok');
+  } catch (e) { toast(t('toast.downloadFail', { err: String(e) }), 'error'); }
+}
+// Importer un fichier local → upload dans le dossier distant visé.
+async function importInto(s, remoteDir) {
+  try {
+    const name = await UploadFileTo(s.id, remoteDir);
+    if (name) {
+      toast(t('toast.fileImported', { name }), 'ok');
+      if (s.cwd) listInto(s, s.cwd).catch(() => {});
+    }
+  } catch (e) { toast(t('toast.importFail', { err: String(e) }), 'error'); }
+}
+// Extraire une archive distante dans son propre dossier (côté serveur).
+async function extractHere(s, entry) {
+  toast(t('toast.extracting', { name: entry.name }), 'info');
+  try {
+    await ExtractArchive(s.id, entry.path);
+    toast(t('toast.extracted', { name: entry.name }), 'ok');
+    if (s.cwd) listInto(s, s.cwd).catch(() => {});
+  } catch (e) { toast(t('toast.extractFail', { err: String(e) }), 'error'); }
+}
+
 function fitActive() {
   const s = sessions.find((x) => x.id === activeSid);
   if (s) { s.fit.fit(); Resize(s.id, s.term.cols, s.term.rows); }
@@ -890,6 +938,9 @@ filesTree.closest('.panel__body').addEventListener('contextmenu', (e) => {
   if (!s) return;
   showMenu(e.clientX, e.clientY, [
     { label: t('ctx.openTermHere'), onClick: () => openTerminalHere(s, s.cwd || '/') },
+    { sep: true },
+    { label: t('ctx.downloadCwd'), onClick: () => downloadDirEntry(s, s.cwd || '/') },
+    { label: t('ctx.importHere'), onClick: () => importInto(s, s.cwd || '/') },
     { sep: true },
     { label: t('ctx.newDirHere'), onClick: () => newDirIn(s, s.cwd || '/') },
     { label: t('ctx.newFileHere'), onClick: () => newFileIn(s, s.cwd || '/') },

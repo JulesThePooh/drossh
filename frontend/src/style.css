@@ -287,6 +287,22 @@ html, body {
 .term-xterm { width: 100%; height: 100%; }
 .term-xterm, .term-xterm * { user-select: text; }
 
+/* Padding du terminal posé sur l'élément .xterm LUI-MÊME : le FitAddon lit le
+   padding de cet élément (pas du parent) pour calculer cols/rows, donc l'espace
+   bas + droite (devant la scrollbar) est garanti quelle que soit la scrollbar. */
+.term-pane .xterm { box-sizing: border-box; padding: 8px 16px 14px 12px; }
+
+/* Scrollbar du terminal : largeur explicite (sinon overlay 0px → le texte passe
+   sous la barre). La largeur réservée est prise en compte par le FitAddon. */
+.term-pane .xterm-viewport::-webkit-scrollbar { width: 14px; }
+.term-pane .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+.term-pane .xterm-viewport::-webkit-scrollbar-thumb {
+  background: #33434f;
+  border: 4px solid var(--bg-term);
+  border-radius: 8px;
+}
+.term-pane .xterm-viewport::-webkit-scrollbar-thumb:hover { background: #46596a; }
+
 .btn-primary {
   padding: 8px 16px;
   background: var(--accent);
@@ -520,7 +536,7 @@ html, body {
 .tabs__list::-webkit-scrollbar { height: 0; }
 
 .term-stack { position: relative; flex: 1; overflow: hidden; }
-.term-pane { position: absolute; inset: 0; padding: 8px 10px; }
+.term-pane { position: absolute; inset: 0; }
 
 .tab__close {
   display: grid; place-items: center;
@@ -557,7 +573,7 @@ html, body {
 /* ===================== FIX layout terminal (hauteur) ===================== */
 .terminal__screen { position: relative; overflow: hidden; padding: 0; }
 .term-stack { position: absolute; inset: 0; }
-.term-pane  { position: absolute; inset: 0; padding: 8px 10px; }
+.term-pane  { position: absolute; inset: 0; }
 .term-welcome {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;

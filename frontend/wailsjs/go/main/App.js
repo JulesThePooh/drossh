@@ -14,12 +14,24 @@ export function Disconnect(arg1) {
   return window['go']['main']['App']['Disconnect'](arg1);
 }
 
+export function DownloadDirTo(arg1, arg2) {
+  return window['go']['main']['App']['DownloadDirTo'](arg1, arg2);
+}
+
+export function DownloadFileTo(arg1, arg2) {
+  return window['go']['main']['App']['DownloadFileTo'](arg1, arg2);
+}
+
 export function EditFile(arg1, arg2) {
   return window['go']['main']['App']['EditFile'](arg1, arg2);
 }
 
 export function ExportStore() {
   return window['go']['main']['App']['ExportStore']();
+}
+
+export function ExtractArchive(arg1, arg2) {
+  return window['go']['main']['App']['ExtractArchive'](arg1, arg2);
 }
 
 export function HomeDir(arg1) {
@@ -68,6 +80,10 @@ export function SaveStore(arg1) {
 
 export function SendInput(arg1, arg2) {
   return window['go']['main']['App']['SendInput'](arg1, arg2);
+}
+
+export function UploadFileTo(arg1, arg2) {
+  return window['go']['main']['App']['UploadFileTo'](arg1, arg2);
 }
 
 export function Version() {

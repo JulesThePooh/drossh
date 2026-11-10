@@ -8,9 +8,15 @@ export function Connect(arg1:main.ConnectOptions):Promise<string>;
 
 export function Disconnect(arg1:string):Promise<void>;
 
+export function DownloadDirTo(arg1:string,arg2:string):Promise<string>;
+
+export function DownloadFileTo(arg1:string,arg2:string):Promise<string>;
+
 export function EditFile(arg1:string,arg2:string):Promise<void>;
 
 export function ExportStore():Promise<string>;
+
+export function ExtractArchive(arg1:string,arg2:string):Promise<void>;
 
 export function HomeDir(arg1:string):Promise<string>;
 
@@ -35,5 +41,7 @@ export function Resize(arg1:string,arg2:number,arg3:number):Promise<void>;
 export function SaveStore(arg1:main.Store):Promise<void>;
 
 export function SendInput(arg1:string,arg2:string):Promise<void>;
+
+export function UploadFileTo(arg1:string,arg2:string):Promise<string>;
 
 export function Version():Promise<string>;
