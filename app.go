@@ -379,7 +379,7 @@ func (a *App) EditFile(id string, remotePath string) error {
 			a.unedit(key, already)
 			return err
 		}
-		if err := a.downloadFile(c, remotePath, local); err != nil {
+		if err := a.downloadFile(c, remotePath, local, nil); err != nil {
 			a.unedit(key, already)
 			return err
 		}
@@ -409,7 +409,9 @@ func (a *App) unedit(key string, keepIfAlready bool) {
 	a.editMu.Unlock()
 }
 
-func (a *App) downloadFile(c *sftp.Client, remotePath, local string) error {
+// onBytes, s'il est fourni, est appelé avec le nombre d'octets de chaque bloc
+// copié : c'est ce qui alimente la barre de progression.
+func (a *App) downloadFile(c *sftp.Client, remotePath, local string, onBytes func(int64)) error {
 	rf, err := c.Open(remotePath)
 	if err != nil {
 		return fmt.Errorf("ouverture distante impossible : %w", err)
@@ -420,11 +422,18 @@ func (a *App) downloadFile(c *sftp.Client, remotePath, local string) error {
 		return err
 	}
 	defer lf.Close()
-	_, err = io.Copy(lf, rf)
+	var dst io.Writer = lf
+	if onBytes != nil {
+		dst = io.MultiWriter(lf, writerFunc(func(p []byte) (int, error) {
+			onBytes(int64(len(p)))
+			return len(p), nil
+		}))
+	}
+	_, err = io.Copy(dst, rf)
 	return err
 }
 
-func (a *App) uploadFile(c *sftp.Client, local, remotePath string) error {
+func (a *App) uploadFile(c *sftp.Client, local, remotePath string, onBytes func(int64)) error {
 	lf, err := os.Open(local)
 	if err != nil {
 		return err
@@ -435,7 +444,14 @@ func (a *App) uploadFile(c *sftp.Client, local, remotePath string) error {
 		return err
 	}
 	defer rf.Close()
-	_, err = io.Copy(rf, lf)
+	var dst io.Writer = rf
+	if onBytes != nil {
+		dst = io.MultiWriter(rf, writerFunc(func(p []byte) (int, error) {
+			onBytes(int64(len(p)))
+			return len(p), nil
+		}))
+	}
+	_, err = io.Copy(dst, lf)
 	return err
 }
 
@@ -467,7 +483,7 @@ func (a *App) watchAndUpload(id, key, remotePath, local string) {
 			if err != nil {
 				return
 			}
-			if err := a.uploadFile(c, local, remotePath); err != nil {
+			if err := a.uploadFile(c, local, remotePath, nil); err != nil {
 				runtime.EventsEmit(a.ctx, "file:error", map[string]string{"path": remotePath, "error": err.Error()})
 			} else {
 				runtime.EventsEmit(a.ctx, "file:uploaded", remotePath)
@@ -531,6 +547,133 @@ func removeRecursive(c *sftp.Client, p string) error {
 }
 
 /* =========================================================================
+   Progression des transferts (barre + détails côté interface)
+   ========================================================================= */
+
+// writerFunc permet d'utiliser une simple fonction comme io.Writer,
+// pour compter les octets au fil de l'eau sans buffer intermédiaire.
+type writerFunc func(p []byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// xfer suit la progression d'un transfert (import ou export) et émet des
+// événements "transfer:*" vers l'interface, en limitant la fréquence d'émission
+// pour ne pas inonder le pont Wails.
+type xfer struct {
+	app       *App
+	id        string
+	kind      string // "upload" (import) | "download" (export)
+	total     int64  // octets attendus au total (0 si inconnu)
+	totalN    int    // nombre de fichiers prévus
+	done      int64  // octets déjà transférés
+	doneN     int    // fichiers terminés
+	current   string // nom du fichier en cours
+	start     time.Time
+	lastEmit  time.Time
+	lastBytes int64
+	speed     float64 // octets/s, lissé
+	mu        sync.Mutex
+}
+
+// newXfer crée un suivi et prévient l'interface qu'un transfert démarre.
+func (a *App) newXfer(kind string, total int64, totalN int) *xfer {
+	a.mu.Lock()
+	a.counter++
+	id := fmt.Sprintf("x%d", a.counter)
+	a.mu.Unlock()
+	now := time.Now()
+	x := &xfer{app: a, id: id, kind: kind, total: total, totalN: totalN, start: now, lastEmit: now}
+	runtime.EventsEmit(a.ctx, "transfer:start", map[string]any{
+		"id": id, "kind": kind, "total": total, "totalFiles": totalN,
+	})
+	return x
+}
+
+// setCurrent signale le passage à un nouveau fichier (émission immédiate).
+func (x *xfer) setCurrent(name string) {
+	x.mu.Lock()
+	x.current = name
+	x.mu.Unlock()
+	x.emit(true)
+}
+
+// add comptabilise n octets transférés (émission limitée à ~tous les 90 ms).
+func (x *xfer) add(n int64) {
+	x.mu.Lock()
+	x.done += n
+	x.mu.Unlock()
+	x.emit(false)
+}
+
+// fileDone marque un fichier comme terminé.
+func (x *xfer) fileDone() {
+	x.mu.Lock()
+	x.doneN++
+	x.mu.Unlock()
+}
+
+// emit envoie l'état courant à l'interface, en calculant une vitesse lissée.
+func (x *xfer) emit(force bool) {
+	x.mu.Lock()
+	now := time.Now()
+	if !force && now.Sub(x.lastEmit) < 90*time.Millisecond {
+		x.mu.Unlock()
+		return
+	}
+	if dt := now.Sub(x.lastEmit).Seconds(); dt > 0 {
+		inst := float64(x.done-x.lastBytes) / dt
+		if x.speed == 0 {
+			x.speed = inst
+		} else {
+			x.speed = x.speed*0.7 + inst*0.3 // lissage exponentiel
+		}
+	}
+	x.lastEmit = now
+	x.lastBytes = x.done
+	payload := map[string]any{
+		"id": x.id, "kind": x.kind,
+		"done": x.done, "total": x.total,
+		"filesDone": x.doneN, "totalFiles": x.totalN,
+		"current": x.current, "speed": x.speed,
+	}
+	x.mu.Unlock()
+	runtime.EventsEmit(x.app.ctx, "transfer:progress", payload)
+}
+
+// finish clôt le transfert : une dernière progression puis fin ou erreur.
+func (x *xfer) finish(err error) {
+	x.emit(true)
+	if err != nil {
+		runtime.EventsEmit(x.app.ctx, "transfer:error", map[string]any{"id": x.id, "error": err.Error()})
+		return
+	}
+	runtime.EventsEmit(x.app.ctx, "transfer:done", map[string]any{"id": x.id})
+}
+
+// dirStats parcourt récursivement un dossier distant et renvoie le total
+// d'octets et le nombre de fichiers réguliers (pour dimensionner la barre).
+func dirStats(c *sftp.Client, remoteDir string) (int64, int) {
+	var bytes int64
+	var n int
+	entries, err := c.ReadDir(remoteDir)
+	if err != nil {
+		return bytes, n
+	}
+	for _, fi := range entries {
+		switch {
+		case fi.IsDir():
+			b, k := dirStats(c, path.Join(remoteDir, fi.Name()))
+			bytes += b
+			n += k
+		case fi.Mode().IsRegular():
+			bytes += fi.Size()
+			n++
+		}
+	}
+	return bytes, n
+}
+
+/* =========================================================================
    Transferts : télécharger (fichier / dossier), importer, extraire
    ========================================================================= */
 
@@ -551,7 +694,18 @@ func (a *App) DownloadFileTo(id string, remotePath string) (string, error) {
 	if target == "" {
 		return "", nil // annulé
 	}
-	if err := a.downloadFile(c, remotePath, target); err != nil {
+	var total int64
+	if fi, err := c.Stat(remotePath); err == nil {
+		total = fi.Size()
+	}
+	x := a.newXfer("download", total, 1)
+	x.setCurrent(path.Base(remotePath))
+	err = a.downloadFile(c, remotePath, target, x.add)
+	if err == nil {
+		x.fileDone()
+	}
+	x.finish(err)
+	if err != nil {
 		return "", err
 	}
 	return target, nil
@@ -574,14 +728,19 @@ func (a *App) DownloadDirTo(id string, remotePath string) (string, error) {
 		return "", nil // annulé
 	}
 	target := filepath.Join(dest, path.Base(remotePath))
-	if err := a.downloadDir(c, remotePath, target); err != nil {
+	total, nfiles := dirStats(c, remotePath)
+	x := a.newXfer("download", total, nfiles)
+	err = a.downloadDir(c, remotePath, target, x)
+	x.finish(err)
+	if err != nil {
 		return "", err
 	}
 	return target, nil
 }
 
 // downloadDir copie récursivement remoteDir vers localDir (fichiers réguliers uniquement).
-func (a *App) downloadDir(c *sftp.Client, remoteDir, localDir string) error {
+// x, s'il est fourni, reçoit la progression au fur et à mesure.
+func (a *App) downloadDir(c *sftp.Client, remoteDir, localDir string, x *xfer) error {
 	if err := os.MkdirAll(localDir, 0o755); err != nil {
 		return err
 	}
@@ -594,12 +753,20 @@ func (a *App) downloadDir(c *sftp.Client, remoteDir, localDir string) error {
 		lp := filepath.Join(localDir, fi.Name())
 		switch {
 		case fi.IsDir():
-			if err := a.downloadDir(c, rp, lp); err != nil {
+			if err := a.downloadDir(c, rp, lp, x); err != nil {
 				return err
 			}
 		case fi.Mode().IsRegular():
-			if err := a.downloadFile(c, rp, lp); err != nil {
+			var cb func(int64)
+			if x != nil {
+				x.setCurrent(fi.Name())
+				cb = x.add
+			}
+			if err := a.downloadFile(c, rp, lp, cb); err != nil {
 				return err
+			}
+			if x != nil {
+				x.fileDone()
 			}
 			// les liens/fichiers spéciaux sont ignorés
 		}
@@ -625,7 +792,18 @@ func (a *App) UploadFileTo(id string, remoteDir string) (string, error) {
 	}
 	name := filepath.Base(local)
 	remotePath := path.Join(remoteDir, name)
-	if err := a.uploadFile(c, local, remotePath); err != nil {
+	var total int64
+	if fi, err := os.Stat(local); err == nil {
+		total = fi.Size()
+	}
+	x := a.newXfer("upload", total, 1)
+	x.setCurrent(name)
+	err = a.uploadFile(c, local, remotePath, x.add)
+	if err == nil {
+		x.fileDone()
+	}
+	x.finish(err)
+	if err != nil {
 		return "", err
 	}
 	return name, nil

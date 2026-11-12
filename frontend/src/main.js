@@ -485,6 +485,89 @@ EventsOn('file:editing', (p) => toast(t('toast.editOpened', { name: p.split('/')
 EventsOn('file:uploaded', (p) => toast(t('toast.saved', { name: p.split('/').pop() }), 'ok'));
 EventsOn('file:error', (o) => toast(t('toast.uploadFail', { err: (o && o.error ? o.error : '') }), 'error'));
 
+/* ===================== Barre de progression des transferts ===================== */
+// Formate un nombre d'octets en o / Ko / Mo / Go lisibles.
+function fmtBytes(n) {
+  if (!n || n < 0) n = 0;
+  const u = ['o', 'Ko', 'Mo', 'Go', 'To'];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i === 0 ? Math.round(n) : n.toFixed(1)) + ' ' + u[i];
+}
+
+// Crée (une seule fois) la carte de progression et renvoie ses éléments.
+function progressCard() {
+  let c = document.getElementById('xfer');
+  if (!c) {
+    c = el(`<div id="xfer" class="xfer">
+      <div class="xfer__head"><span class="xfer__title"></span><span class="xfer__pct"></span></div>
+      <div class="xfer__bar"><div class="xfer__fill"></div></div>
+      <div class="xfer__detail"></div>
+    </div>`);
+    document.body.appendChild(c);
+  }
+  return {
+    card: c,
+    title: c.querySelector('.xfer__title'),
+    pct: c.querySelector('.xfer__pct'),
+    fill: c.querySelector('.xfer__fill'),
+    detail: c.querySelector('.xfer__detail'),
+  };
+}
+
+EventsOn('transfer:start', () => {
+  const p = progressCard();
+  p.card.classList.remove('xfer--error', 'xfer--done');
+  clearTimeout(p.card._timer);
+  p.fill.classList.remove('xfer__fill--indet');
+  p.fill.style.width = '0%';
+  p.title.textContent = '';
+  p.pct.textContent = '';
+  p.detail.textContent = '';
+  p.card.classList.add('xfer--show');
+});
+
+EventsOn('transfer:progress', (o) => {
+  const p = progressCard();
+  const kind = (o.kind === 'upload') ? t('xfer.up') : t('xfer.down');
+  p.title.textContent = kind + (o.current ? ' · ' + o.current : '');
+  const hasTotal = o.total > 0;
+  const pct = hasTotal ? Math.min(100, Math.round((o.done / o.total) * 100)) : null;
+  p.pct.textContent = (pct === null) ? '' : pct + '%';
+  if (pct === null) {
+    p.fill.classList.add('xfer__fill--indet');
+  } else {
+    p.fill.classList.remove('xfer__fill--indet');
+    p.fill.style.width = pct + '%';
+  }
+  const parts = [fmtBytes(o.done) + (hasTotal ? ' / ' + fmtBytes(o.total) : '')];
+  if (o.speed > 0) parts.push(fmtBytes(o.speed) + '/s');
+  if (o.totalFiles > 1) parts.push(t('xfer.fileN', { done: o.filesDone, total: o.totalFiles }));
+  p.detail.textContent = parts.join('   ·   ');
+});
+
+EventsOn('transfer:done', () => {
+  const c = document.getElementById('xfer');
+  if (!c) return;
+  const fill = c.querySelector('.xfer__fill');
+  fill.classList.remove('xfer__fill--indet');
+  fill.style.width = '100%';
+  c.classList.add('xfer--done');
+  c.querySelector('.xfer__pct').textContent = '100%';
+  clearTimeout(c._timer);
+  c._timer = setTimeout(() => c.classList.remove('xfer--show'), 1300);
+});
+
+EventsOn('transfer:error', (o) => {
+  const c = document.getElementById('xfer');
+  if (!c) return;
+  c.classList.add('xfer--error');
+  c.querySelector('.xfer__fill').classList.remove('xfer__fill--indet');
+  c.querySelector('.xfer__detail').textContent = t('xfer.failed', { err: (o && o.error ? o.error : '') });
+  clearTimeout(c._timer);
+  c._timer = setTimeout(() => c.classList.remove('xfer--show'), 4500);
+});
+
 /* ===================== Gestionnaire de clés ===================== */
 const keyModal = document.getElementById('key-modal');
 const keyError = document.getElementById('key-error');
@@ -946,6 +1029,16 @@ filesTree.closest('.panel__body').addEventListener('contextmenu', (e) => {
     { label: t('ctx.newFileHere'), onClick: () => newFileIn(s, s.cwd || '/') },
     { sep: true },
     { label: t('btn.refresh'), onClick: refreshFiles },
+  ]);
+});
+
+// Clic droit n'importe où dans le panneau Connexions (vide inclus)
+// → nouvelle connexion / nouveau dossier.
+connTree.closest('.panel__body').addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  showMenu(e.clientX, e.clientY, [
+    { label: t('btn.newConn'), onClick: () => openConnModal() },
+    { label: t('btn.newFolder'), onClick: addFolder },
   ]);
 });
 

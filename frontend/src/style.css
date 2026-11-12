@@ -513,6 +513,76 @@ html, body {
 .toast--ok    { background: #13241a; border-color: rgba(61,220,151,.45); color: #9ff0c4; }
 .toast--info  { background: #141f2b; border-color: rgba(74,163,223,.4); color: #bfe0f5; }
 
+/* Carte de progression des transferts (import / export) */
+.xfer {
+  position: fixed;
+  bottom: 40px;
+  right: 24px;
+  width: 340px;
+  max-width: 78vw;
+  background: #16202b;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  transition: opacity .2s, transform .2s;
+  z-index: 101;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+.xfer--show { opacity: 1; transform: translateY(0); }
+.xfer__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.xfer__title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.xfer__pct { flex: none; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.xfer__bar {
+  height: 6px;
+  background: var(--bg-active);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.xfer__fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width .15s linear;
+}
+/* Barre indéterminée (total inconnu) : va-et-vient */
+.xfer__fill--indet {
+  width: 35% !important;
+  transition: none;
+  animation: xfer-indet 1.1s ease-in-out infinite;
+}
+@keyframes xfer-indet {
+  0%   { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+.xfer__detail {
+  margin-top: 8px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.xfer--done .xfer__fill  { background: var(--accent-2); }
+.xfer--error .xfer__fill { background: #ff6b6b; }
+.xfer--error .xfer__detail { color: #ffb4b4; }
+
 /* ---- scrollbars discrètes ---- */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #223040; border-radius: 6px; }
